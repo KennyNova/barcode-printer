@@ -55,6 +55,7 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
                         gold_karat: int) -> bytes:
     """
     Create DPL (Datamax Programming Language) command for the jewelry tag.
+    Datamax O'Neil E-4205A Mark III
     
     Front side: Price, D=carat, Item number (rotated 90°)
     Back side: Barcode (printed on tail portion that folds over)
@@ -65,45 +66,64 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
     carat_str = f"D={carat_weight:.2f}"
     
-    # DPL Command structure for Datamax E-Class
-    dpl = []
+    # DPL Command - Proper format for E-Class Mark III
+    # Using metric mode and proper command structure
+    dpl = "\x02n\r\n"                    # STX + Clear buffer
+    dpl += "\x02M0500\r\n"               # Set metric mode (dots)
+    dpl += "\x02L\r\n"                   # Start label format
+    dpl += "D11\r\n"                     # Print darkness/density (0-15)
+    dpl += "S2\r\n"                      # Print speed
+    dpl += f"PW{LABEL_WIDTH_DOTS}\r\n"   # Print width in dots
+    dpl += "PC00\r\n"                    # No cutting
     
-    # Initialize label
-    dpl.append("\x02L")           # STX + Start label format
-    dpl.append("D11")             # Density
-    dpl.append("H15")             # Heat setting  
-    dpl.append(f"PW{LABEL_HEIGHT_DOTS}")  # Print width (swapped due to rotation)
-    dpl.append(f"LL{LABEL_WIDTH_DOTS}")   # Label length
+    # Text commands - Format: 1X1100xxxyyy0ttfontDATA
+    # 1 = text record, X = rotation (1=90°CW), 11 = always 11
+    # xxx = X position, yyy = Y position
+    # 0 = not used, tt = font multiplier, font = 0-9
     
-    # FRONT SIDE - Text rotated 90° (rotation 1 = 90° clockwise)
-    # Format: 1YRRRXXXX YYYY fffFONTdata
-    # Y=rotation(1=90°), R=reverse, X=column, Y=row, f=font magnification
+    # For 90° rotation (text reads upward when tag hangs):
+    # Rotation 1 = 90° clockwise
     
-    # Price - top line (largest)
-    # Position from right edge, text reads bottom to top when tag hangs
-    dpl.append(f"141100015005000{price_str}")
+    # Price - large font at top
+    dpl += f"1211000200100011{price_str}\r\n"
     
-    # D=carat - middle line  
-    dpl.append(f"131100095005000{carat_str}")
+    # D=carat - medium font middle  
+    dpl += f"1211000700100011{carat_str}\r\n"
     
-    # Item number - bottom line
-    dpl.append(f"121100160005000{item_number}")
+    # Item number - bottom
+    dpl += f"1211001200100011{item_number}\r\n"
     
-    # BACK SIDE - Barcode on the tail portion (folds behind)
-    # This prints on the extended tail area that wraps around
-    # Barcode rotated 90° to match orientation, positioned on tail
-    dpl.append(f"1B1300250010030h040w02c{barcode_data}")
+    # Barcode on tail (back) - Code 128
+    # Format: 1Bxxyyyrrwwhhhbc"DATA"
+    # B = barcode, xx = X pos, yyy = Y pos, rr = rotation
+    # ww = wide bar, hhh = height, b = print text below, c = code type
+    dpl += f'1B1601000102030050n128"{barcode_data}"\r\n'
     
-    # End and print
-    dpl.append("E")
+    # Quantity and end
+    dpl += "Q0001\r\n"                   # Print quantity = 1
+    dpl += "E\r\n"                       # End and print
     
-    return "\r\n".join(dpl).encode('ascii')
+    return dpl.encode('ascii')
+
+
+def create_test_label() -> bytes:
+    """Create a simple test label to verify printer communication."""
+    dpl = "\x02n\r\n"                    # Clear buffer
+    dpl += "\x02L\r\n"                   # Start label
+    dpl += "D11\r\n"                     # Density
+    dpl += "S2\r\n"                      # Speed
+    dpl += "PW336\r\n"                   # Width ~42mm
+    dpl += "1211000500050011TEST\r\n"   # Simple text
+    dpl += "1211001000050011PRINT\r\n"  # Second line
+    dpl += "Q0001\r\n"                   # Qty 1
+    dpl += "E\r\n"                       # End
+    return dpl.encode('ascii')
 
 
 def create_zpl_command(item_number: str, price: float, carat_weight: float,
                        gold_karat: int) -> bytes:
     """
-    Create ZPL command (if printer supports ZPL emulation).
+    Create ZPL command (if printer is in ZPL emulation mode).
     Front: Price, D=carat, Item number (rotated)
     Back: Barcode on tail
     """
@@ -112,22 +132,37 @@ def create_zpl_command(item_number: str, price: float, carat_weight: float,
     price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
     carat_str = f"D={carat_weight:.2f}"
     
-    # ZPL with rotation (^FWR = rotate 90°)
+    # ZPL II format - simpler and more compatible
     zpl = f"""^XA
-^PW{LABEL_HEIGHT_DOTS}
-^LL{LABEL_WIDTH_DOTS}
-^FWR
-^CF0,32
-^FO20,30^FD{price_str}^FS
-^CF0,28
-^FO65,30^FD{carat_str}^FS
-^CF0,24
-^FO110,30^FD{item_number}^FS
-^FWR
-^BY2,2,40
-^FO160,200^BC,40,N,N,N^FD{barcode_data}^FS
-^XZ"""
-    return zpl.strip().encode('ascii')
+^PW{LABEL_WIDTH_DOTS}
+^LL{LABEL_HEIGHT_DOTS}
+^LH0,0
+^FWB
+^CF0,30
+^FO20,20^FD{price_str}^FS
+^CF0,25
+^FO60,20^FD{carat_str}^FS
+^CF0,22
+^FO100,20^FD{item_number}^FS
+^FWB
+^BY2
+^FO150,180^BCB,40,N,N,N^FD{barcode_data}^FS
+^XZ
+"""
+    return zpl.encode('ascii')
+
+
+def create_zpl_test_label() -> bytes:
+    """Create a simple ZPL test label."""
+    return b"""^XA
+^PW336
+^LL208
+^CF0,30
+^FO50,50^FDTEST^FS
+^CF0,25
+^FO50,90^FDPRINT^FS
+^XZ
+"""
 
 
 def create_epl_command(item_number: str, price: float, carat_weight: float,
@@ -191,6 +226,7 @@ def send_to_usb_printer(command: bytes, printer_name: Optional[str] = None) -> b
         printer_name = USB_PRINTER_NAME
     
     if sys.platform == "win32":
+        # Try Method 1: win32print (standard Windows printing)
         try:
             import win32print
             
@@ -214,24 +250,43 @@ def send_to_usb_printer(command: bytes, printer_name: Optional[str] = None) -> b
             
             hPrinter = win32print.OpenPrinter(printer_name)
             try:
+                # Get printer port for direct access attempt
+                printer_info = win32print.GetPrinter(hPrinter, 2)
+                port_name = printer_info.get('pPortName', 'Unknown')
+                print(f"Printer port: {port_name}")
+                
                 hJob = win32print.StartDocPrinter(hPrinter, 1, ("Jewelry Tag", None, "RAW"))
                 try:
                     win32print.StartPagePrinter(hPrinter)
-                    win32print.WritePrinter(hPrinter, command)
+                    bytes_written = win32print.WritePrinter(hPrinter, command)
                     win32print.EndPagePrinter(hPrinter)
+                    print(f"✓ Sent {bytes_written} bytes to {printer_name}")
                 finally:
                     win32print.EndDocPrinter(hPrinter)
             finally:
                 win32print.ClosePrinter(hPrinter)
-            print(f"✓ Print command sent to USB printer: {printer_name}")
             return True
+            
         except ImportError:
             print("✗ win32print not available. Install pywin32:")
             print("  pip install pywin32")
             return False
         except Exception as e:
-            print(f"✗ Failed to send to USB printer: {e}")
-            # Try to list printers for help
+            print(f"✗ Failed via win32print: {e}")
+            print("  Trying alternative method...")
+            
+            # Try Method 2: Direct file write to printer share
+            try:
+                # Try writing directly to the printer share
+                printer_path = f"\\\\localhost\\{printer_name}"
+                with open(printer_path, 'wb') as f:
+                    f.write(command)
+                print(f"✓ Sent via direct file write to {printer_path}")
+                return True
+            except Exception as e2:
+                print(f"✗ Direct write also failed: {e2}")
+                
+            # List printers for help
             try:
                 import win32print
                 printers = [p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
@@ -446,6 +501,41 @@ def list_printers():
         return []
 
 
+def print_test_label(use_zpl: bool = False, printer_name: Optional[str] = None, 
+                     dry_run: bool = False) -> bool:
+    """
+    Print a test label to verify printer communication.
+    Try this if regular prints aren't working.
+    """
+    print("\n" + "="*50)
+    print("TEST PRINT")
+    print("="*50)
+    
+    if use_zpl:
+        print("Format: ZPL")
+        command = create_zpl_test_label()
+    else:
+        print("Format: DPL")
+        command = create_test_label()
+    
+    print(f"Command preview:\n{command.decode('ascii')}")
+    print("="*50)
+    
+    if dry_run:
+        print("[DRY RUN] Command not sent to printer")
+        return True
+    
+    success = send_to_usb_printer(command, printer_name)
+    
+    if success:
+        print("✓ Test command sent! Check if label printed.")
+        print("  If nothing printed, try: --test --zpl")
+    else:
+        print("✗ Failed to send test command")
+    
+    return success
+
+
 def main():
     """Main entry point with argument parsing."""
     parser = argparse.ArgumentParser(
@@ -488,11 +578,21 @@ Examples:
                         help='Generate commands without sending to printer')
     parser.add_argument('--list-printers', action='store_true',
                         help='List available printers and exit')
+    parser.add_argument('--test', action='store_true',
+                        help='Print a test label to verify printer communication')
     
     args = parser.parse_args()
     
     if args.list_printers:
         list_printers()
+        return
+    
+    if args.test:
+        print_test_label(
+            use_zpl=args.zpl,
+            printer_name=args.printer,
+            dry_run=args.dry_run
+        )
         return
     
     if args.interactive:
