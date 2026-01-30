@@ -99,26 +99,23 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     
     if preset == "barbell":
         # Barbell tag: 7/16" x 3.5" total
-        # Prints in SECOND section (negative column offset moves it there)
+        # NO column offset - let it print at natural position
         # Only ONE text command works per label!
-        # Using format that works: C offset + quoted text format
         #
         # ┌─────────────┬─────────────┬──────────────────────┐
-        # │   (skip)    │  PRINT HERE │    LOOP (no print)   │
-        # │             │  All info   │                      │
+        # │  PRINT HERE │   (back)    │    LOOP (no print)   │
+        # │  All info   │             │                      │
         # └─────────────┴─────────────┴──────────────────────┘
         
         # Combine all info into one line (only one text command works)
+        # Keep it short to avoid truncation
         combined_text = f"{price_str} {carat_str} {item_number}"
         
-        # Column offset to position in second section
-        dpl.append("C-100")  # Negative offset to reach second section
-        
-        # Format that works: 1211 + XXXX + YYY + 0100 + "text"
-        # x = 4 digits, y = 3 digits
+        # NO column offset - removed C command
+        # Format: 1211 + XXXX + YYY + 0100 + text (no quotes - they were printing)
         x_pos = 0
         y_pos = 10  # Vertical position on narrow tag
-        dpl.append(f'1211{x_pos:04d}{y_pos:03d}0100"{combined_text}"')    # Item at ~90 dots
+        dpl.append(f'1211{x_pos:04d}{y_pos:03d}0100{combined_text}')    # Item at ~90 dots
         
     else:
         # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
@@ -165,12 +162,10 @@ def create_test_label(preset: str = "standard") -> bytes:
     """Create a simple test label to verify printer communication."""
     
     if preset == "barbell":
-        # Barbell test - using format that works (column offset + quoted text)
-        # Format: 1211 + XXXX + YYY + 0100 + "text"
+        # Barbell test - no column offset, no quotes
         dpl = "\x02L\r\n"          # Start label
         dpl += "D11\r\n"           # Density
-        dpl += "C-100\r\n"         # Column offset to second section
-        dpl += '121100000100100"TEST BARBELL"\r\n'  # x=0000, y=010, 0100, text
+        dpl += '121100000100100TEST\r\n'  # x=0000, y=010, 0100, text (no quotes)
         dpl += "E\r\n"             # End
     else:
         # Standard test
