@@ -98,37 +98,43 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     dpl.append("H10")                    # Heat setting
     
     if preset == "barbell":
-        # Barbell tag: 7/16" x 3.5" (11mm x 89mm)
-        # At 203 DPI: 89 dots wide x 710 dots long
-        # Printable area: 7/16" x 1 3/4" (89 x 355 dots)
-        # Loop area: remaining 1 3/4" (non-printable)
+        # Barbell tag: 7/16" x 3.5" 
+        # WIDTH: 7/16" = 0.4375" = 89 dots (VERY narrow!)
+        # LENGTH: 3.5" total, but only 1.75" = 355 dots is printable
         #
-        # Layout (very narrow tag):
-        # ┌────────────────────────────────────────────────────┐
-        # │ Price │ D=ct │ Item# │ Barcode │    LOOP          │ 7/16"
-        # │  ←───── 1.75" printable ─────→ │←── 1.75" loop ──→│
-        # └────────────────────────────────────────────────────┘
-        #                    3.5" total
+        # This tag is SO narrow that we can only fit tiny text
+        # Text prints lengthwise down the tag
+        #
+        # ┌───┐
+        # │ P │ <- Price (rotated)
+        # │ D │ <- D=carat
+        # │ I │ <- Item#
+        # │|||│ <- Small barcode (optional)
+        # └───┘
+        #  89 dots wide (7/16")
         
         dpl.append("PW089")                         # Width: 89 dots (7/16")
-        dpl.append("L0355")                         # Length: 355 dots (1.75" printable only)
+        dpl.append("L0355")                         # Length: 355 dots (1.75")
         
-        # All text rotated 90° to read when tag hangs
-        # Very small font (size 1) to fit in narrow width
+        # Text must be TINY to fit in 89 dots width
+        # Using smallest font, no rotation (prints top to bottom)
         # Format: 1 ROT 11 00 XXX YYY 0 HH W F DATA
+        # ROT=2 means 0° (normal), font 0 is smallest
         
-        # Price - at start of printable area
-        dpl.append(f"111100001000150110{price_str}")
+        # Price at top - small font
+        dpl.append(f"121100001000050100{price_str}")
         
-        # D=carat - next section
-        dpl.append(f"111100006000150110{carat_str}")
+        # D=carat below
+        dpl.append(f"121100006000050100{carat_str}")
         
-        # Item number - fits in remaining space before barcode
-        dpl.append(f"111100011000100110{item_number}")
+        # Item number 
+        dpl.append(f"121100012000050100{item_number}")
         
-        # Barcode - small, at end of printable area
-        # Very narrow barcode to fit 7/16" width
-        dpl.append(f"1e1020000150101015030{barcode_data}")
+        # Barcode - VERY small to fit, or skip if too narrow
+        # Using smallest possible barcode settings
+        # Only include if item number is short enough
+        if len(barcode_data) <= 10:
+            dpl.append(f"1e2020000050101008020{barcode_data}")
         
     else:
         # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
@@ -171,16 +177,29 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     return "\r\n".join(dpl).encode('ascii')
 
 
-def create_test_label() -> bytes:
+def create_test_label(preset: str = "standard") -> bytes:
     """Create a simple test label to verify printer communication."""
-    # Super minimal DPL - just the essentials
-    # Using immediate commands where possible
-    dpl = "\x02n\r\n"          # STX n = Clear buffer
-    dpl += "\x02L\r\n"         # STX L = Start label
-    dpl += "D11\r\n"           # Density 11
-    dpl += "121100005003000TEST\r\n"     # Text "TEST"
-    dpl += "121100005008000PRINT\r\n"    # Text "PRINT"  
-    dpl += "E\r\n"             # End - print and advance to next label
+    
+    if preset == "barbell":
+        # Barbell test: 7/16" wide (89 dots) x 1.75" long (355 dots)
+        dpl = "\x02n\r\n"          # Clear buffer
+        dpl += "\x02L\r\n"         # Start label
+        dpl += "D11\r\n"           # Density
+        dpl += "PW089\r\n"         # Width 89 dots (7/16")
+        dpl += "L0355\r\n"         # Length 355 dots (1.75")
+        # Simple small text that fits in narrow width
+        dpl += "121100002000100100TEST\r\n"
+        dpl += "Q0001\r\n"         # Quantity 1
+        dpl += "E\r\n"             # End
+    else:
+        # Standard test
+        dpl = "\x02n\r\n"          # Clear buffer
+        dpl += "\x02L\r\n"         # Start label
+        dpl += "D11\r\n"           # Density
+        dpl += "121100005003000TEST\r\n"
+        dpl += "121100005008000PRINT\r\n"
+        dpl += "Q0001\r\n"         # Quantity 1
+        dpl += "E\r\n"             # End
     
     return dpl.encode('ascii')
 
@@ -631,13 +650,17 @@ def create_setup_command() -> bytes:
 
 
 def print_test_label(use_zpl: bool = False, printer_name: Optional[str] = None, 
-                     dry_run: bool = False, calibrate: bool = False) -> bool:
+                     dry_run: bool = False, calibrate: bool = False,
+                     preset: str = "standard") -> bool:
     """
     Print a test label to verify printer communication.
     Try this if regular prints aren't working.
     """
+    label = get_label_preset(preset)
+    
     print("\n" + "="*50)
     print("TEST PRINT")
+    print(f"Preset: {label['name']}")
     print("="*50)
     
     if calibrate:
@@ -655,7 +678,7 @@ def print_test_label(use_zpl: bool = False, printer_name: Optional[str] = None,
         command = create_zpl_test_label()
     else:
         print("Format: DPL")
-        command = create_test_label()
+        command = create_test_label(preset)
     
     print(f"Command preview:\n{command.decode('ascii')}")
     print("="*50)
@@ -818,7 +841,8 @@ Examples:
         print_test_label(
             use_zpl=args.zpl,
             printer_name=args.printer,
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            preset=args.label
         )
         return
     
