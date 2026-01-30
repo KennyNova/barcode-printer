@@ -74,14 +74,11 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     dpl.append("\x02n")                  # Clear image buffer
     dpl.append("\x02L")                  # Start label format
     dpl.append("D11")                    # Darkness (0-30, 11 is good)
-    dpl.append("S1")                     # Speed (1=slow, better for small labels)
+    dpl.append("S2")                     # Speed
     dpl.append("H10")                    # Heat setting
-    dpl.append("R0000")                  # Reference point 0,0
-    dpl.append("ZT")                     # Thermal transfer (ZB for direct thermal)
-    dpl.append("JF")                     # Top of form backup
-    dpl.append("f100")                   # Form stop position  
+    dpl.append("pC")                     # Cut/pause at label (prevents over-feeding)
     dpl.append(f"PW{LABEL_WIDTH_DOTS}")  # Print width: 336 dots (42mm)
-    dpl.append(f"LE{LABEL_HEIGHT_DOTS}") # Label length: 208 dots (26mm)
+    dpl.append(f"L0{LABEL_HEIGHT_DOTS}") # Label length: 208 dots (26mm) - L0 format
     
     # Text with 90° rotation (rotation code 1)
     # Format: 1 R 11 00 XXX YYY 0 HH W FONT DATA
@@ -101,8 +98,8 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     # e = Code 128 Auto
     dpl.append(f"1e1016000200102040100{barcode_data}")
     
-    # Print 1 label and end
-    dpl.append("Q0001")
+    # Print 1 label and pause
+    dpl.append("Q0001,1")                # Quantity 1, pause after
     dpl.append("E")
     
     return "\r\n".join(dpl).encode('ascii')
@@ -111,25 +108,20 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
 def create_test_label() -> bytes:
     """Create a simple test label to verify printer communication."""
     # For jewelry tag: 42mm wide x 26mm tall (at 203 DPI: 336 x 208 dots)
-    # Using gap sensing between labels
     dpl = []
     dpl.append("\x02n")                  # Clear buffer
-    dpl.append("\x02O")                  # Reset to default settings
     dpl.append("\x02L")                  # Start label format
-    dpl.append("H08")                    # Heat setting (0-20, 8 is moderate)
     dpl.append("D11")                    # Darkness/density
-    dpl.append("S1")                     # Slow speed for small labels
-    dpl.append("R0000")                  # Reference point at 0,0
-    dpl.append("ZT")                     # Thermal transfer mode (or ZB for direct thermal)
-    dpl.append("JF")                     # Top of form backup
-    dpl.append("f100")                   # Form stop position (label gap sensing)
+    dpl.append("S2")                     # Speed
+    dpl.append("H10")                    # Heat setting
+    dpl.append("pC")                     # Cut at label (prevents over-feeding)
     dpl.append("PW336")                  # Print width 42mm = 336 dots
-    dpl.append("LE208")                  # Label end/length 26mm = 208 dots
+    dpl.append("L0208")                  # Label length 26mm = 208 dots (use L not LE)
     # Simple text - format: 1X1100xxxyyy0ttfDATA
     # X=rotation(2=0°), xxx=col, yyy=row, t=size multiplier, f=font
     dpl.append("121100005003000TEST")    # "TEST" at position 50,30
     dpl.append("121100005008000PRINT")   # "PRINT" below
-    dpl.append("Q0001")                  # Quantity = 1
+    dpl.append("Q0001,1")                # Quantity = 1, pause after
     dpl.append("E")                      # End and print ONE label
     
     return "\r\n".join(dpl).encode('ascii')
