@@ -57,8 +57,9 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     Create DPL (Datamax Programming Language) command for the jewelry tag.
     Datamax O'Neil E-4205A Mark III
     
-    Front side: Price, D=carat, Item number (rotated 90°)
-    Back side: Barcode (printed on tail portion that folds over)
+    Tag: 42mm x 26mm (336 x 208 dots at 203 DPI)
+    Front side: Price, D=carat, Item number (rotated 90° for hanging tag)
+    Back side: Barcode on tail
     """
     barcode_data = generate_item_barcode(item_number)
     
@@ -66,58 +67,72 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
     carat_str = f"D={carat_weight:.2f}"
     
-    # DPL Command - Proper format for E-Class Mark III
-    # Using metric mode and proper command structure
-    dpl = "\x02n\r\n"                    # STX + Clear buffer
-    dpl += "\x02M0500\r\n"               # Set metric mode (dots)
-    dpl += "\x02L\r\n"                   # Start label format
-    dpl += "D11\r\n"                     # Print darkness/density (0-15)
-    dpl += "S2\r\n"                      # Print speed
-    dpl += f"PW{LABEL_WIDTH_DOTS}\r\n"   # Print width in dots
-    dpl += "PC00\r\n"                    # No cutting
+    # Build DPL command
+    dpl = []
     
-    # Text commands - Format: 1X1100xxxyyy0ttfontDATA
-    # 1 = text record, X = rotation (1=90°CW), 11 = always 11
-    # xxx = X position, yyy = Y position
-    # 0 = not used, tt = font multiplier, font = 0-9
+    # Initialize and configure
+    dpl.append("\x02n")                  # Clear image buffer
+    dpl.append("\x02L")                  # Start label format
+    dpl.append("D11")                    # Darkness (0-30, 11 is good)
+    dpl.append("S1")                     # Speed (1=slow, better for small labels)
+    dpl.append("H10")                    # Heat setting
+    dpl.append("R0000")                  # Reference point 0,0
+    dpl.append("ZT")                     # Thermal transfer (ZB for direct thermal)
+    dpl.append("JF")                     # Top of form backup
+    dpl.append("f100")                   # Form stop position  
+    dpl.append(f"PW{LABEL_WIDTH_DOTS}")  # Print width: 336 dots (42mm)
+    dpl.append(f"LE{LABEL_HEIGHT_DOTS}") # Label length: 208 dots (26mm)
     
-    # For 90° rotation (text reads upward when tag hangs):
-    # Rotation 1 = 90° clockwise
+    # Text with 90° rotation (rotation code 1)
+    # Format: 1 R 11 00 XXX YYY 0 HH W FONT DATA
+    # R=rotation (1=90°CW), XXX=row, YYY=col, HH=height mult, W=width mult
     
-    # Price - large font at top
-    dpl += f"1211000200100011{price_str}\r\n"
+    # Price - top (when hanging), large
+    dpl.append(f"111100002001500211{price_str}")
     
-    # D=carat - medium font middle  
-    dpl += f"1211000700100011{carat_str}\r\n"
+    # D=carat - middle
+    dpl.append(f"111100007001500211{carat_str}")
     
-    # Item number - bottom
-    dpl += f"1211001200100011{item_number}\r\n"
+    # Item number - bottom  
+    dpl.append(f"111100012001500211{item_number}")
     
-    # Barcode on tail (back) - Code 128
-    # Format: 1Bxxyyyrrwwhhhbc"DATA"
-    # B = barcode, xx = X pos, yyy = Y pos, rr = rotation
-    # ww = wide bar, hhh = height, b = print text below, c = code type
-    dpl += f'1B1601000102030050n128"{barcode_data}"\r\n'
+    # Barcode on tail area - Code 128
+    # Format: 1 B rotation col row narrow:wide height readable type DATA
+    # e = Code 128 Auto
+    dpl.append(f"1e1016000200102040100{barcode_data}")
     
-    # Quantity and end
-    dpl += "Q0001\r\n"                   # Print quantity = 1
-    dpl += "E\r\n"                       # End and print
+    # Print 1 label and end
+    dpl.append("Q0001")
+    dpl.append("E")
     
-    return dpl.encode('ascii')
+    return "\r\n".join(dpl).encode('ascii')
 
 
 def create_test_label() -> bytes:
     """Create a simple test label to verify printer communication."""
-    dpl = "\x02n\r\n"                    # Clear buffer
-    dpl += "\x02L\r\n"                   # Start label
-    dpl += "D11\r\n"                     # Density
-    dpl += "S2\r\n"                      # Speed
-    dpl += "PW336\r\n"                   # Width ~42mm
-    dpl += "1211000500050011TEST\r\n"   # Simple text
-    dpl += "1211001000050011PRINT\r\n"  # Second line
-    dpl += "Q0001\r\n"                   # Qty 1
-    dpl += "E\r\n"                       # End
-    return dpl.encode('ascii')
+    # For jewelry tag: 42mm wide x 26mm tall (at 203 DPI: 336 x 208 dots)
+    # Using gap sensing between labels
+    dpl = []
+    dpl.append("\x02n")                  # Clear buffer
+    dpl.append("\x02O")                  # Reset to default settings
+    dpl.append("\x02L")                  # Start label format
+    dpl.append("H08")                    # Heat setting (0-20, 8 is moderate)
+    dpl.append("D11")                    # Darkness/density
+    dpl.append("S1")                     # Slow speed for small labels
+    dpl.append("R0000")                  # Reference point at 0,0
+    dpl.append("ZT")                     # Thermal transfer mode (or ZB for direct thermal)
+    dpl.append("JF")                     # Top of form backup
+    dpl.append("f100")                   # Form stop position (label gap sensing)
+    dpl.append("PW336")                  # Print width 42mm = 336 dots
+    dpl.append("LE208")                  # Label end/length 26mm = 208 dots
+    # Simple text - format: 1X1100xxxyyy0ttfDATA
+    # X=rotation(2=0°), xxx=col, yyy=row, t=size multiplier, f=font
+    dpl.append("121100005003000TEST")    # "TEST" at position 50,30
+    dpl.append("121100005008000PRINT")   # "PRINT" below
+    dpl.append("Q0001")                  # Quantity = 1
+    dpl.append("E")                      # End and print ONE label
+    
+    return "\r\n".join(dpl).encode('ascii')
 
 
 def create_zpl_command(item_number: str, price: float, carat_weight: float,
@@ -501,8 +516,20 @@ def list_printers():
         return []
 
 
+def create_calibrate_command() -> bytes:
+    """
+    Create command to calibrate the printer for the current media.
+    Run this first if labels aren't being detected properly.
+    """
+    dpl = []
+    dpl.append("\x02n")          # Clear buffer
+    dpl.append("\x02O")          # Reset to defaults
+    dpl.append("\x02e")          # Autosense - calibrate for current media
+    return "\r\n".join(dpl).encode('ascii')
+
+
 def print_test_label(use_zpl: bool = False, printer_name: Optional[str] = None, 
-                     dry_run: bool = False) -> bool:
+                     dry_run: bool = False, calibrate: bool = False) -> bool:
     """
     Print a test label to verify printer communication.
     Try this if regular prints aren't working.
@@ -510,6 +537,16 @@ def print_test_label(use_zpl: bool = False, printer_name: Optional[str] = None,
     print("\n" + "="*50)
     print("TEST PRINT")
     print("="*50)
+    
+    if calibrate:
+        print("Running media calibration first...")
+        cal_cmd = create_calibrate_command()
+        print(f"Calibration command: {cal_cmd.decode('ascii')}")
+        if not dry_run:
+            send_to_usb_printer(cal_cmd, printer_name)
+            print("Waiting for calibration...")
+            import time
+            time.sleep(3)
     
     if use_zpl:
         print("Format: ZPL")
@@ -529,9 +566,32 @@ def print_test_label(use_zpl: bool = False, printer_name: Optional[str] = None,
     
     if success:
         print("✓ Test command sent! Check if label printed.")
-        print("  If nothing printed, try: --test --zpl")
+        print("\nIf still feeding continuously:")
+        print("  1. Press PAUSE on printer")
+        print("  2. Run: python jewelry_tag_printer.py --calibrate")
+        print("  3. Try test again")
     else:
         print("✗ Failed to send test command")
+    
+    return success
+
+
+def calibrate_printer(printer_name: Optional[str] = None) -> bool:
+    """Run media calibration on the printer."""
+    print("\n" + "="*50)
+    print("MEDIA CALIBRATION")
+    print("="*50)
+    print("This will calibrate the printer for your label size.")
+    print("Make sure labels are loaded correctly.")
+    print("="*50)
+    
+    command = create_calibrate_command()
+    success = send_to_usb_printer(command, printer_name)
+    
+    if success:
+        print("✓ Calibration command sent!")
+        print("  The printer should feed a few labels to detect the gap.")
+        print("  Wait for it to finish, then try printing.")
     
     return success
 
@@ -580,11 +640,17 @@ Examples:
                         help='List available printers and exit')
     parser.add_argument('--test', action='store_true',
                         help='Print a test label to verify printer communication')
+    parser.add_argument('--calibrate', action='store_true',
+                        help='Calibrate printer for current label media (run if labels feed continuously)')
     
     args = parser.parse_args()
     
     if args.list_printers:
         list_printers()
+        return
+    
+    if args.calibrate:
+        calibrate_printer(printer_name=args.printer)
         return
     
     if args.test:
