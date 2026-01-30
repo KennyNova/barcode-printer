@@ -99,23 +99,24 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     
     if preset == "barbell":
         # Barbell tag: 7/16" x 3.5" total
-        # All info goes in FIRST HALF only (0.875" = ~177 dots)
-        # No barcode for now
+        # Prints in SECOND section (negative column offset moves it there)
+        # Only ONE text command works per label!
+        # Using format that works: C offset + quoted text format
         #
         # ┌─────────────┬─────────────┬──────────────────────┐
-        # │  ALL INFO   │   (empty)   │    LOOP (no print)   │
-        # │  HERE       │             │                      │
+        # │   (skip)    │  PRINT HERE │    LOOP (no print)   │
+        # │             │  All info   │                      │
         # └─────────────┴─────────────┴──────────────────────┘
         
-        # Don't set PW or L0 - let printer use its calibrated settings
+        # Combine all info into one line (only one text command works)
+        combined_text = f"{price_str} {carat_str} {item_number}"
         
-        # All text in first ~170 dots (first half)
-        # Format: 121100XXXYYYHHWWF  where XXX=row, YYY=col
-        # Small positions to stay in first half
+        # Column offset to position in second section
+        dpl.append("C-100")  # Negative offset to reach second section
         
-        dpl.append(f"121100001000100100{price_str}")      # Price at ~10 dots
-        dpl.append(f"121100005000100100{carat_str}")      # D= at ~50 dots  
-        dpl.append(f"121100009000050100{item_number}")    # Item at ~90 dots
+        # Single text command with quoted format (the one that works)
+        # Y position controls vertical placement on narrow tag
+        dpl.append(f'12110000000100100"{combined_text}"')    # Item at ~90 dots
         
     else:
         # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
@@ -162,13 +163,11 @@ def create_test_label(preset: str = "standard") -> bytes:
     """Create a simple test label to verify printer communication."""
     
     if preset == "barbell":
-        # Barbell test - 3 lines of text in first half only
-        dpl = "\x02n\r\n"          # Clear buffer
-        dpl += "\x02L\r\n"         # Start label
+        # Barbell test - using format that works (column offset + quoted text)
+        dpl = "\x02L\r\n"          # Start label
         dpl += "D11\r\n"           # Density
-        dpl += "121100001000100100LINE1\r\n"    # First line at 10 dots
-        dpl += "121100005000100100LINE2\r\n"    # Second line at 50 dots
-        dpl += "121100009000050100LINE3\r\n"    # Third line at 90 dots
+        dpl += "C-100\r\n"         # Column offset to second section
+        dpl += '1211000000010100"TEST BARBELL"\r\n'  # Combined text
         dpl += "E\r\n"             # End
     else:
         # Standard test
