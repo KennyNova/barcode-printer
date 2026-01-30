@@ -35,14 +35,16 @@ LABEL_PRESETS = {
         "printable_height_dots": 208,
     },
     "barbell": {
-        "name": "Barbell Tag (7/16 x 3.5 inch)",
-        "description": "Narrow tag: 7/16\" wide, 3.5\" long, 1.75\" printable",
-        "width_inches": 0.4375,     # 7/16"
-        "height_inches": 3.5,       # 3.5" total
-        "printable_height_inches": 1.75,  # 1.75" printable
+        "name": "Barbell Tag (7/16\" x 3.5\")",
+        "description": "Narrow string tag: 7/16\" wide, 1.75\" printable + 1.75\" loop",
+        "width_inches": 0.4375,     # 7/16" = 11mm
+        "total_length_inches": 3.5, # 3.5" total = 89mm
+        "printable_length_inches": 1.75,  # 1.75" printable area
+        "loop_length_inches": 1.75, # 1.75" adhesive-free loop
         "width_dots": 89,           # 7/16" at 203 DPI
-        "height_dots": 710,         # 3.5" at 203 DPI
-        "printable_height_dots": 355,  # 1.75" at 203 DPI
+        "height_dots": 355,         # 1.75" printable at 203 DPI (use this for label length)
+        "total_height_dots": 710,   # 3.5" at 203 DPI
+        "printable_height_dots": 355,
     }
 }
 

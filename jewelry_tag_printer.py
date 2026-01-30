@@ -98,25 +98,37 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     dpl.append("H10")                    # Heat setting
     
     if preset == "barbell":
-        # Barbell tag: 7/16" x 3.5" (89 x 710 dots)
-        # Very narrow - text must be small and rotated
-        dpl.append(f"PW{label['width_dots']}")      # Width: 89 dots
-        dpl.append(f"L0{label['height_dots']}")     # Length: 710 dots
+        # Barbell tag: 7/16" x 3.5" (11mm x 89mm)
+        # At 203 DPI: 89 dots wide x 710 dots long
+        # Printable area: 7/16" x 1 3/4" (89 x 355 dots)
+        # Loop area: remaining 1 3/4" (non-printable)
+        #
+        # Layout (very narrow tag):
+        # ┌────────────────────────────────────────────────────┐
+        # │ Price │ D=ct │ Item# │ Barcode │    LOOP          │ 7/16"
+        # │  ←───── 1.75" printable ─────→ │←── 1.75" loop ──→│
+        # └────────────────────────────────────────────────────┘
+        #                    3.5" total
         
-        # Text rotated 90° (rotation 1) - small font for narrow tag
-        # Printable area is top 1.75" (355 dots)
+        dpl.append("PW089")                         # Width: 89 dots (7/16")
+        dpl.append("L0355")                         # Length: 355 dots (1.75" printable only)
         
-        # Price at top
-        dpl.append(f"111100001000100111{price_str}")
+        # All text rotated 90° to read when tag hangs
+        # Very small font (size 1) to fit in narrow width
+        # Format: 1 ROT 11 00 XXX YYY 0 HH W F DATA
         
-        # D=carat below price
-        dpl.append(f"111100004500100111{carat_str}")
+        # Price - at start of printable area
+        dpl.append(f"111100001000150110{price_str}")
         
-        # Item number below carat
-        dpl.append(f"111100008000050111{item_number}")
+        # D=carat - next section
+        dpl.append(f"111100006000150110{carat_str}")
         
-        # Barcode in lower portion (below printable area fold)
-        dpl.append(f"1e1015000050101020050{barcode_data}")
+        # Item number - fits in remaining space before barcode
+        dpl.append(f"111100011000100110{item_number}")
+        
+        # Barcode - small, at end of printable area
+        # Very narrow barcode to fit 7/16" width
+        dpl.append(f"1e1020000150101015030{barcode_data}")
         
     else:
         # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
