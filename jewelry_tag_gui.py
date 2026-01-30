@@ -22,8 +22,9 @@ class JewelryTagPrinterGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Jewelry Tag Printer")
-        self.root.geometry("450x520")
-        self.root.resizable(False, False)
+        self.root.geometry("500x600")
+        self.root.minsize(450, 500)
+        # Now resizable!
         
         # Set style
         style = ttk.Style()
