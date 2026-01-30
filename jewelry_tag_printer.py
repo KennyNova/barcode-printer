@@ -107,24 +107,16 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
 
 def create_test_label() -> bytes:
     """Create a simple test label to verify printer communication."""
-    # For jewelry tag: 42mm wide x 26mm tall (at 203 DPI: 336 x 208 dots)
-    dpl = []
-    dpl.append("\x02n")                  # Clear buffer
-    dpl.append("\x02L")                  # Start label format
-    dpl.append("D11")                    # Darkness/density
-    dpl.append("S2")                     # Speed
-    dpl.append("H10")                    # Heat setting
-    dpl.append("pC")                     # Cut at label (prevents over-feeding)
-    dpl.append("PW336")                  # Print width 42mm = 336 dots
-    dpl.append("L0208")                  # Label length 26mm = 208 dots (use L not LE)
-    # Simple text - format: 1X1100xxxyyy0ttfDATA
-    # X=rotation(2=0°), xxx=col, yyy=row, t=size multiplier, f=font
-    dpl.append("121100005003000TEST")    # "TEST" at position 50,30
-    dpl.append("121100005008000PRINT")   # "PRINT" below
-    dpl.append("Q0001,1")                # Quantity = 1, pause after
-    dpl.append("E")                      # End and print ONE label
+    # Super minimal DPL - just the essentials
+    # Using immediate commands where possible
+    dpl = "\x02n\r\n"          # STX n = Clear buffer
+    dpl += "\x02L\r\n"         # STX L = Start label
+    dpl += "D11\r\n"           # Density 11
+    dpl += "121100005003000TEST\r\n"     # Text "TEST"
+    dpl += "121100005008000PRINT\r\n"    # Text "PRINT"  
+    dpl += "E\r\n"             # End - print and advance to next label
     
-    return "\r\n".join(dpl).encode('ascii')
+    return dpl.encode('ascii')
 
 
 def create_zpl_command(item_number: str, price: float, carat_weight: float,
@@ -520,6 +512,32 @@ def create_calibrate_command() -> bytes:
     return "\r\n".join(dpl).encode('ascii')
 
 
+def create_setup_command() -> bytes:
+    """
+    Configure printer for jewelry tag labels.
+    Sets label size, gap sensing, and other parameters.
+    Run this once to configure the printer.
+    """
+    # System-level configuration commands (persist in printer memory)
+    # Using SOH commands for system config
+    cmds = []
+    
+    # Set label length to 208 dots (26mm) using KcLLL format
+    # SOH + Kc + length
+    cmds.append("\x01Kc208")      # Label length 208 dots
+    
+    # Set gap length (typically 16-24 dots for small labels)
+    cmds.append("\x01KG024")      # Gap length 24 dots (~3mm)
+    
+    # Set to gap sensing mode (not continuous)
+    cmds.append("\x01KcG")        # Gap mode
+    
+    # Save settings
+    cmds.append("\x01Ks")         # Store settings
+    
+    return "\r\n".join(cmds).encode('ascii')
+
+
 def print_test_label(use_zpl: bool = False, printer_name: Optional[str] = None, 
                      dry_run: bool = False, calibrate: bool = False) -> bool:
     """
@@ -588,6 +606,32 @@ def calibrate_printer(printer_name: Optional[str] = None) -> bool:
     return success
 
 
+def setup_printer(printer_name: Optional[str] = None) -> bool:
+    """
+    Configure printer settings for jewelry tags.
+    Run this once to set up the printer for your label size.
+    """
+    print("\n" + "="*50)
+    print("PRINTER SETUP FOR JEWELRY TAGS")
+    print("="*50)
+    print("Configuring for: 42mm x 26mm tags with gap")
+    print("="*50)
+    
+    command = create_setup_command()
+    print(f"Setup commands:\n{command.decode('ascii')}")
+    
+    success = send_to_usb_printer(command, printer_name)
+    
+    if success:
+        print("✓ Setup commands sent!")
+        print("\nNow running calibration...")
+        import time
+        time.sleep(2)
+        calibrate_printer(printer_name)
+    
+    return success
+
+
 def main():
     """Main entry point with argument parsing."""
     parser = argparse.ArgumentParser(
@@ -634,11 +678,17 @@ Examples:
                         help='Print a test label to verify printer communication')
     parser.add_argument('--calibrate', action='store_true',
                         help='Calibrate printer for current label media (run if labels feed continuously)')
+    parser.add_argument('--setup', action='store_true',
+                        help='Configure printer for jewelry tags (42x26mm) - run once')
     
     args = parser.parse_args()
     
     if args.list_printers:
         list_printers()
+        return
+    
+    if args.setup:
+        setup_printer(printer_name=args.printer)
         return
     
     if args.calibrate:
