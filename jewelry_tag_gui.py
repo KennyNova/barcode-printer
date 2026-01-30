@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from jewelry_tag_printer import (
     print_tag, generate_item_barcode, CSV_FILE, PRINTER_IP,
-    DEFAULT_USE_USB, USB_PRINTER_NAME
+    DEFAULT_USE_USB, USB_PRINTER_NAME, LABEL_PRESETS, DEFAULT_PRESET
 )
 
 
@@ -22,7 +22,7 @@ class JewelryTagPrinterGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Jewelry Tag Printer")
-        self.root.geometry("450x480")
+        self.root.geometry("450x520")
         self.root.resizable(False, False)
         
         # Set style
@@ -48,6 +48,16 @@ class JewelryTagPrinterGUI:
         
         # Input fields
         row = 2
+        
+        # Label Preset
+        ttk.Label(main_frame, text="Label Type:").grid(row=row, column=0, sticky="e", pady=5)
+        self.preset_var = tk.StringVar(value=DEFAULT_PRESET)
+        preset_values = [f"{k} - {v['name']}" for k, v in LABEL_PRESETS.items()]
+        preset_combo = ttk.Combobox(main_frame, textvariable=self.preset_var,
+                                    values=list(LABEL_PRESETS.keys()), width=22, state='readonly')
+        preset_combo.grid(row=row, column=1, sticky="w", pady=5, padx=(10, 0))
+        preset_combo.set(DEFAULT_PRESET)
+        row += 1
         
         # Item Number
         ttk.Label(main_frame, text="Item Number:").grid(row=row, column=0, sticky="e", pady=5)
@@ -245,6 +255,7 @@ class JewelryTagPrinterGUI:
                 price=float(self.price_var.get().replace('$', '').replace(',', '')),
                 carat_weight=float(self.carat_var.get()),
                 gold_karat=int(self.karat_var.get()),
+                preset=self.preset_var.get(),
                 printer_ip=self.printer_ip_var.get().strip(),
                 printer_name=self.printer_name_var.get().strip(),
                 use_usb=self.use_usb_var.get(),

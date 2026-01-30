@@ -24,8 +24,7 @@ except ImportError:
 try:
     from config import (
         PRINTER_IP, PRINTER_PORT, CSV_FILE, PRINTER_DPI,
-        LABEL_WIDTH_MM, LABEL_HEIGHT_MM, DEFAULT_USE_USB,
-        USB_PRINTER_NAME
+        DEFAULT_USE_USB, USB_PRINTER_NAME, LABEL_PRESETS, DEFAULT_PRESET
     )
     DPI = PRINTER_DPI
 except ImportError:
@@ -34,15 +33,36 @@ except ImportError:
     PRINTER_PORT = 9100
     CSV_FILE = "print_history.csv"
     DPI = 203
-    LABEL_WIDTH_MM = 42
-    LABEL_HEIGHT_MM = 26
     DEFAULT_USE_USB = True
     USB_PRINTER_NAME = "Datamax-O'Neil E-4205A Mark III"
+    DEFAULT_PRESET = "standard"
+    LABEL_PRESETS = {
+        "standard": {
+            "name": "Standard Tag (42x26mm)",
+            "width_dots": 336,
+            "height_dots": 208,
+            "printable_height_dots": 208,
+        },
+        "barbell": {
+            "name": "Barbell Tag (7/16 x 3.5 inch)",
+            "width_dots": 89,
+            "height_dots": 710,
+            "printable_height_dots": 355,
+        }
+    }
 
-# Label dimensions in dots (203 DPI = 8 dots/mm)
-DOTS_PER_MM = DPI / 25.4
-LABEL_WIDTH_DOTS = int(LABEL_WIDTH_MM * DOTS_PER_MM)
-LABEL_HEIGHT_DOTS = int(LABEL_HEIGHT_MM * DOTS_PER_MM)
+
+def get_label_preset(preset_name: str) -> dict:
+    """Get label dimensions for a preset."""
+    if preset_name not in LABEL_PRESETS:
+        print(f"⚠ Unknown preset '{preset_name}', using 'standard'")
+        preset_name = "standard"
+    return LABEL_PRESETS[preset_name]
+
+
+# Default label dimensions (for backward compatibility)
+LABEL_WIDTH_DOTS = LABEL_PRESETS[DEFAULT_PRESET]["width_dots"]
+LABEL_HEIGHT_DOTS = LABEL_PRESETS[DEFAULT_PRESET]["height_dots"]
 
 
 def generate_item_barcode(item_number: str) -> str:
@@ -52,54 +72,88 @@ def generate_item_barcode(item_number: str) -> str:
 
 
 def create_dpl_command(item_number: str, price: float, carat_weight: float, 
-                        gold_karat: int) -> bytes:
+                        gold_karat: int, preset: str = "standard") -> bytes:
     """
     Create DPL (Datamax Programming Language) command for the jewelry tag.
     Datamax O'Neil E-4205A Mark III
     
-    Tag: 42mm x 26mm (336 x 208 dots at 203 DPI)
-    Front side: Price, D=carat, Item number (rotated 90° for hanging tag)
-    Back side: Barcode on tail
+    Presets:
+    - standard: 68mm x 26mm tag (42mm body + 26mm tail)
+                Text on body (rotated 90°), barcode on tail
+    - barbell: 7/16" x 3.5" narrow tag (text vertical, barcode below)
     """
     barcode_data = generate_item_barcode(item_number)
+    label = get_label_preset(preset)
     
-    # Format values for display (matching the tag image)
+    # Format values for display
     price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
     carat_str = f"D={carat_weight:.2f}"
     
     # Build DPL command
     dpl = []
-    
-    # Initialize and configure
     dpl.append("\x02n")                  # Clear image buffer
     dpl.append("\x02L")                  # Start label format
-    dpl.append("D11")                    # Darkness (0-30, 11 is good)
+    dpl.append("D11")                    # Darkness
     dpl.append("S2")                     # Speed
     dpl.append("H10")                    # Heat setting
-    dpl.append("pC")                     # Cut/pause at label (prevents over-feeding)
-    dpl.append(f"PW{LABEL_WIDTH_DOTS}")  # Print width: 336 dots (42mm)
-    dpl.append(f"L0{LABEL_HEIGHT_DOTS}") # Label length: 208 dots (26mm) - L0 format
     
-    # Text with 90° rotation (rotation code 1)
-    # Format: 1 R 11 00 XXX YYY 0 HH W FONT DATA
-    # R=rotation (1=90°CW), XXX=row, YYY=col, HH=height mult, W=width mult
+    if preset == "barbell":
+        # Barbell tag: 7/16" x 3.5" (89 x 710 dots)
+        # Very narrow - text must be small and rotated
+        dpl.append(f"PW{label['width_dots']}")      # Width: 89 dots
+        dpl.append(f"L0{label['height_dots']}")     # Length: 710 dots
+        
+        # Text rotated 90° (rotation 1) - small font for narrow tag
+        # Printable area is top 1.75" (355 dots)
+        
+        # Price at top
+        dpl.append(f"111100001000100111{price_str}")
+        
+        # D=carat below price
+        dpl.append(f"111100004500100111{carat_str}")
+        
+        # Item number below carat
+        dpl.append(f"111100008000050111{item_number}")
+        
+        # Barcode in lower portion (below printable area fold)
+        dpl.append(f"1e1015000050101020050{barcode_data}")
+        
+    else:
+        # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
+        # Layout (as printed flat, before folding):
+        #
+        #   ┌──────────────────┬──────────────────┬─────────────┐
+        #   │   Product Info   │     BARCODE      │    TAIL     │  26mm
+        #   │   (front)        │   (folds behind) │  (string)   │  height
+        #   │   21mm (168 dots)│   21mm (168 dots)│ 26mm (208)  │
+        #   └──────────────────┴──────────────────┴─────────────┘
+        #                        68mm total (544 dots)
+        #
+        # When folded: barcode wraps behind product info, tail is the loop
+        
+        dpl.append(f"PW{label['height_dots']}")     # Width: 208 dots (26mm height)
+        dpl.append(f"L0{label['width_dots']}")      # Length: 544 dots (68mm)
+        
+        # PRODUCT INFO - First 21mm (0-168 dots) - this is the FRONT when folded
+        # Text rotated 90° so it reads correctly when tag hangs
+        # Format: 1 ROT 11 00 XXX YYY 0 HH W F DATA
+        
+        # Price - top of front section, large font
+        dpl.append(f"111100001500300221{price_str}")
+        
+        # D=carat - middle of front section
+        dpl.append(f"111100006500300211{carat_str}")
+        
+        # Item number - bottom of front section
+        dpl.append(f"111100011500150211{item_number}")
+        
+        # BARCODE - Next 21mm (168-336 dots) - this FOLDS BEHIND
+        # Position starts at X=168, rotated 90° to fit
+        # Code 128, narrow bars, height fits in 26mm width
+        dpl.append(f"1e1017000300101020070{barcode_data}")
     
-    # Price - top (when hanging), large
-    dpl.append(f"111100002001500211{price_str}")
-    
-    # D=carat - middle
-    dpl.append(f"111100007001500211{carat_str}")
-    
-    # Item number - bottom  
-    dpl.append(f"111100012001500211{item_number}")
-    
-    # Barcode on tail area - Code 128
-    # Format: 1 B rotation col row narrow:wide height readable type DATA
-    # e = Code 128 Auto
-    dpl.append(f"1e1016000200102040100{barcode_data}")
-    
-    # Print 1 label and pause
-    dpl.append("Q0001,1")                # Quantity 1, pause after
+    # Print 1 label
+    dpl.append("Q0001")
     dpl.append("E")
     
     return "\r\n".join(dpl).encode('ascii')
@@ -370,6 +424,7 @@ def generate_barcode_preview(item_number: str, output_dir: str = "barcodes"):
 
 def print_tag(item_number: str, price: float, carat_weight: float,
               gold_karat: int,
+              preset: str = "standard",
               printer_ip: Optional[str] = None,
               printer_name: Optional[str] = None,
               use_usb: bool = None,  # None = use default from config
@@ -384,6 +439,7 @@ def print_tag(item_number: str, price: float, carat_weight: float,
         price: Selling price (e.g., 17600)
         carat_weight: Diamond carat weight (e.g., 5.26)
         gold_karat: Gold karat (e.g., 14, 18, 24)
+        preset: Label preset - "standard" (42x26mm) or "barbell" (7/16x3.5")
         printer_ip: Printer IP address (if using network)
         printer_name: USB printer name (if using USB)
         use_usb: Use USB connection (default: True from config)
@@ -398,9 +454,12 @@ def print_tag(item_number: str, price: float, carat_weight: float,
     if use_usb is None:
         use_usb = DEFAULT_USE_USB
     
+    label = get_label_preset(preset)
+    
     print("\n" + "="*50)
     print("JEWELRY TAG PRINT JOB")
     print("="*50)
+    print(f"Label Preset: {label['name']}")
     print(f"Item Number:  {item_number}")
     print(f"Price:        {int(price) if price == int(price) else price}")
     print(f"Carat Weight: D={carat_weight:.2f}")
@@ -417,7 +476,7 @@ def print_tag(item_number: str, price: float, carat_weight: float,
         command = create_epl_command(item_number, price, carat_weight, gold_karat)
         print("Using EPL format")
     else:
-        command = create_dpl_command(item_number, price, carat_weight, gold_karat)
+        command = create_dpl_command(item_number, price, carat_weight, gold_karat, preset)
         print("Using DPL format")
     
     if dry_run:
@@ -439,19 +498,39 @@ def print_tag(item_number: str, price: float, carat_weight: float,
     return success
 
 
-def interactive_mode():
+def interactive_mode(preset: str = "standard"):
     """Run in interactive mode, prompting for each field."""
+    label = get_label_preset(preset)
+    
     print("\n" + "="*50)
     print("  JEWELRY TAG PRINTER - Interactive Mode")
     print("  Datamax O'Neil E-Class Mark III")
+    print(f"  Label: {label['name']}")
     print("="*50 + "\n")
+    print("Tip: Type 'switch' to change label preset\n")
+    
+    current_preset = preset
     
     while True:
         try:
-            item_number = input("Item Number (or 'quit' to exit): ").strip()
+            item_number = input("Item Number (or 'quit'/'switch'): ").strip()
             if item_number.lower() in ('quit', 'exit', 'q'):
                 print("Goodbye!")
                 break
+            
+            if item_number.lower() == 'switch':
+                print("\nAvailable presets:")
+                for key in LABEL_PRESETS.keys():
+                    marker = " *" if key == current_preset else ""
+                    print(f"  - {key}{marker}")
+                new_preset = input("Enter preset name: ").strip().lower()
+                if new_preset in LABEL_PRESETS:
+                    current_preset = new_preset
+                    label = get_label_preset(current_preset)
+                    print(f"✓ Switched to: {label['name']}\n")
+                else:
+                    print(f"✗ Unknown preset: {new_preset}\n")
+                continue
             
             if not item_number:
                 print("✗ Item number is required\n")
@@ -462,11 +541,12 @@ def interactive_mode():
             gold_karat = int(input("Gold Karat (14/18/24): "))
             
             # Confirm before printing
-            print("\nReady to print. Send to printer? [Y/n]: ", end="")
+            print(f"\nLabel: {label['name']}")
+            print("Ready to print. Send to printer? [Y/n]: ", end="")
             confirm = input().strip().lower()
             
             if confirm in ('', 'y', 'yes'):
-                print_tag(item_number, price, carat_weight, gold_karat)
+                print_tag(item_number, price, carat_weight, gold_karat, preset=current_preset)
             else:
                 print("Print cancelled.")
             
@@ -632,6 +712,19 @@ def setup_printer(printer_name: Optional[str] = None) -> bool:
     return success
 
 
+def list_presets():
+    """Display available label presets."""
+    print("\nAvailable Label Presets:")
+    print("-" * 60)
+    for key, preset in LABEL_PRESETS.items():
+        default = " (default)" if key == DEFAULT_PRESET else ""
+        print(f"  {key:12} - {preset['name']}{default}")
+        if 'description' in preset:
+            print(f"               {preset['description']}")
+        print(f"               Size: {preset['width_dots']}x{preset['height_dots']} dots")
+    print("-" * 60)
+
+
 def main():
     """Main entry point with argument parsing."""
     parser = argparse.ArgumentParser(
@@ -641,12 +734,17 @@ def main():
 Printer: Datamax O'Neil E-4205A Mark III on USB003
 Default connection: USB (configured in config.py)
 
+Label Presets:
+  standard  - 42mm x 26mm tag (default)
+  barbell   - 7/16" x 3.5" narrow tag
+
 Examples:
-  %(prog)s -i                                    # Interactive mode
-  %(prog)s -n "MSD958009" -p 17600 -c 5.26 -k 14 # Print via USB (default)
-  %(prog)s -n "RING001" -p 1299 -c 1.0 -k 18 --dry-run
-  %(prog)s --list-printers                       # Show available printers
-  %(prog)s -n "TEST" -p 100 -c 1.0 -k 14 --network --ip 192.168.1.50
+  %(prog)s -i                                      # Interactive mode
+  %(prog)s -n "MSD958009" -p 17600 -c 5.26 -k 14   # Standard tag
+  %(prog)s -n "MSD958009" -p 17600 -c 5.26 -k 14 --label barbell  # Barbell tag
+  %(prog)s --list-presets                          # Show label presets
+  %(prog)s --test                                  # Test print
+  %(prog)s --test --label barbell                  # Test barbell label
         """
     )
     
@@ -660,6 +758,9 @@ Examples:
                         help='Carat weight')
     parser.add_argument('-k', '--karat', type=int, choices=[10, 14, 18, 22, 24],
                         help='Gold karat (10, 14, 18, 22, or 24)')
+    parser.add_argument('-l', '--label', type=str, default=DEFAULT_PRESET,
+                        choices=list(LABEL_PRESETS.keys()),
+                        help=f'Label preset (default: {DEFAULT_PRESET})')
     parser.add_argument('--printer', type=str, default=USB_PRINTER_NAME,
                         help=f'USB printer name (default: {USB_PRINTER_NAME})')
     parser.add_argument('--network', action='store_true',
@@ -674,17 +775,23 @@ Examples:
                         help='Generate commands without sending to printer')
     parser.add_argument('--list-printers', action='store_true',
                         help='List available printers and exit')
+    parser.add_argument('--list-presets', action='store_true',
+                        help='List available label presets and exit')
     parser.add_argument('--test', action='store_true',
                         help='Print a test label to verify printer communication')
     parser.add_argument('--calibrate', action='store_true',
-                        help='Calibrate printer for current label media (run if labels feed continuously)')
+                        help='Calibrate printer for current label media')
     parser.add_argument('--setup', action='store_true',
-                        help='Configure printer for jewelry tags (42x26mm) - run once')
+                        help='Configure printer for jewelry tags - run once')
     
     args = parser.parse_args()
     
     if args.list_printers:
         list_printers()
+        return
+    
+    if args.list_presets:
+        list_presets()
         return
     
     if args.setup:
@@ -704,7 +811,7 @@ Examples:
         return
     
     if args.interactive:
-        interactive_mode()
+        interactive_mode(preset=args.label)
     elif all([args.item_number, args.price is not None, args.carat is not None,
               args.karat is not None]):
         print_tag(
@@ -712,6 +819,7 @@ Examples:
             price=args.price,
             carat_weight=args.carat,
             gold_karat=args.karat,
+            preset=args.label,
             printer_ip=args.ip,
             printer_name=args.printer,
             use_usb=not args.network,  # USB is default, --network overrides
