@@ -99,43 +99,23 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     
     if preset == "barbell":
         # Barbell tag: 7/16" x 3.5" total
-        # WIDTH: 7/16" = 89 dots
-        # PRINTABLE LENGTH: 1.75" = 355 dots (split into two halves)
-        # LOOP (non-printable): 1.75" = 355 dots
+        # All info goes in FIRST HALF only (0.875" = ~177 dots)
+        # No barcode for now
         #
-        # Layout:
         # ┌─────────────┬─────────────┬──────────────────────┐
-        # │  PRODUCT    │   BARCODE   │    LOOP (no print)   │
-        # │    INFO     │   (back)    │                      │
-        # │  0.875"     │   0.875"    │       1.75"          │
-        # │  (177 dots) │  (177 dots) │     (355 dots)       │
+        # │  ALL INFO   │   (empty)   │    LOOP (no print)   │
+        # │  HERE       │             │                      │
         # └─────────────┴─────────────┴──────────────────────┘
-        #               ↑ fold
-        #
-        # First half (0-177 dots): Price, D=, Item# 
-        # Second half (177-355 dots): Barcode (folds behind)
-        # Loop (355+ dots): Nothing!
         
-        dpl.append("PW089")                         # Width: 89 dots (7/16")
-        dpl.append("L0355")                         # Length: 355 dots (1.75" printable only)
+        # Don't set PW or L0 - let printer use its calibrated settings
         
-        # FIRST HALF (0-177 dots): Product Info
-        # Text rotated 90° to read when tag hangs vertically
-        # Using small font to fit in 89 dot width
+        # All text in first ~170 dots (first half)
+        # Format: 121100XXXYYYHHWWF  where XXX=row, YYY=col
+        # Small positions to stay in first half
         
-        # Price - near start
-        dpl.append(f"121100001500100100{price_str}")
-        
-        # D=carat 
-        dpl.append(f"121100005500100100{carat_str}")
-        
-        # Item number
-        dpl.append(f"121100010000050100{item_number}")
-        
-        # SECOND HALF (177-355 dots): Barcode
-        # This section folds behind to become the back
-        # Barcode positioned starting at ~180 dots
-        dpl.append(f"1e2018500100101008050{barcode_data}")
+        dpl.append(f"121100001000100100{price_str}")      # Price at ~10 dots
+        dpl.append(f"121100005000100100{carat_str}")      # D= at ~50 dots  
+        dpl.append(f"121100009000050100{item_number}")    # Item at ~90 dots
         
     else:
         # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
@@ -182,13 +162,13 @@ def create_test_label(preset: str = "standard") -> bytes:
     """Create a simple test label to verify printer communication."""
     
     if preset == "barbell":
-        # Barbell test - same format that worked before, different position
-        # The working test printed on the loop (too far right)
-        # So we need to print more to the LEFT (lower X coordinates)
+        # Barbell test - 3 lines of text in first half only
         dpl = "\x02n\r\n"          # Clear buffer
         dpl += "\x02L\r\n"         # Start label
         dpl += "D11\r\n"           # Density
-        dpl += "121100001000500TEST\r\n"     # Position 010,005 - near start
+        dpl += "121100001000100100LINE1\r\n"    # First line at 10 dots
+        dpl += "121100005000100100LINE2\r\n"    # Second line at 50 dots
+        dpl += "121100009000050100LINE3\r\n"    # Third line at 90 dots
         dpl += "E\r\n"             # End
     else:
         # Standard test
