@@ -114,9 +114,11 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
         # Column offset to position in second section
         dpl.append("C-100")  # Negative offset to reach second section
         
-        # Single text command with quoted format (the one that works)
-        # Y position controls vertical placement on narrow tag
-        dpl.append(f'12110000000100100"{combined_text}"')    # Item at ~90 dots
+        # Format that works: 1211 + XXXX + YYY + 0100 + "text"
+        # x = 4 digits, y = 3 digits
+        x_pos = 0
+        y_pos = 10  # Vertical position on narrow tag
+        dpl.append(f'1211{x_pos:04d}{y_pos:03d}0100"{combined_text}"')    # Item at ~90 dots
         
     else:
         # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
@@ -164,10 +166,11 @@ def create_test_label(preset: str = "standard") -> bytes:
     
     if preset == "barbell":
         # Barbell test - using format that works (column offset + quoted text)
+        # Format: 1211 + XXXX + YYY + 0100 + "text"
         dpl = "\x02L\r\n"          # Start label
         dpl += "D11\r\n"           # Density
         dpl += "C-100\r\n"         # Column offset to second section
-        dpl += '1211000000010100"TEST BARBELL"\r\n'  # Combined text
+        dpl += '121100000100100"TEST BARBELL"\r\n'  # x=0000, y=010, 0100, text
         dpl += "E\r\n"             # End
     else:
         # Standard test
