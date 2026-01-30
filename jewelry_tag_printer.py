@@ -98,24 +98,27 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     dpl.append("H10")                    # Heat setting
     
     if preset == "barbell":
-        # Barbell tag: 7/16" x 3.5" total
-        # NO column offset - let it print at natural position
-        # Only ONE text command works per label!
-        #
-        # ┌─────────────┬─────────────┬──────────────────────┐
-        # │  PRINT HERE │   (back)    │    LOOP (no print)   │
-        # │  All info   │             │                      │
-        # └─────────────┴─────────────┴──────────────────────┘
+        # Barbell tag using format from working label software
+        # Format: 19 (scalable font) + 1 (rotation) + height + row + col + width
+        # Based on: 1911001008001 20 pattern from old software
         
-        # Combine all info into one line (only one text command works)
-        # Keep it short to avoid truncation
-        combined_text = f"{price_str} {carat_str} {item_number}"
+        # Setup commands from working software
+        dpl.append("PE")   # Present enable
+        dpl.append("SE")   # Sensor enable  
+        dpl.append("H17")  # Heat setting
         
-        # NO column offset - removed C command
-        # Format: 1211 + XXXX + YYY + 0100 + text (no quotes - they were printing)
-        x_pos = 0
-        y_pos = 10  # Vertical position on narrow tag
-        dpl.append(f'1211{x_pos:04d}{y_pos:03d}0100{combined_text}')    # Item at ~90 dots
+        # Text lines using scalable font format (19)
+        # Format: 191100RRRRCCC20 where RRRR=row, CCC=column area
+        # Rows decrease for stacking (like 1008, 1007, 1006)
+        
+        # Price at row 1008
+        dpl.append(f"1911001008001 20{price_str}")
+        
+        # Carat at row 1007  
+        dpl.append(f"1911001007001 20{carat_str}")
+        
+        # Item number at row 1006
+        dpl.append(f"1911001006001 20{item_number}")    # Item at ~90 dots
         
     else:
         # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
@@ -162,10 +165,15 @@ def create_test_label(preset: str = "standard") -> bytes:
     """Create a simple test label to verify printer communication."""
     
     if preset == "barbell":
-        # Barbell test - no column offset, no quotes
+        # Barbell test using format from working label software
         dpl = "\x02L\r\n"          # Start label
         dpl += "D11\r\n"           # Density
-        dpl += '121100000100100TEST\r\n'  # x=0000, y=010, 0100, text (no quotes)
+        dpl += "PE\r\n"            # Present enable
+        dpl += "SE\r\n"            # Sensor enable
+        dpl += "H17\r\n"           # Heat setting
+        dpl += "1911001008001 20TEST1\r\n"   # Row 1008
+        dpl += "1911001007001 20TEST2\r\n"   # Row 1007
+        dpl += "1911001006001 20TEST3\r\n"   # Row 1006
         dpl += "E\r\n"             # End
     else:
         # Standard test
