@@ -24,17 +24,20 @@ except ImportError:
 try:
     from config import (
         PRINTER_IP, PRINTER_PORT, CSV_FILE, PRINTER_DPI,
-        LABEL_WIDTH_MM, LABEL_HEIGHT_MM
+        LABEL_WIDTH_MM, LABEL_HEIGHT_MM, DEFAULT_USE_USB,
+        USB_PRINTER_NAME
     )
     DPI = PRINTER_DPI
 except ImportError:
     # Default configuration if config.py not found
-    PRINTER_IP = "192.168.1.100"  # Change to your printer's IP
-    PRINTER_PORT = 9100           # Default raw printing port
+    PRINTER_IP = "192.168.1.100"
+    PRINTER_PORT = 9100
     CSV_FILE = "print_history.csv"
-    DPI = 203                     # E-Class Mark III standard DPI
+    DPI = 203
     LABEL_WIDTH_MM = 42
     LABEL_HEIGHT_MM = 26
+    DEFAULT_USE_USB = True
+    USB_PRINTER_NAME = "Datamax-O'Neil E-4205A Mark III"
 
 # Label dimensions in dots (203 DPI = 8 dots/mm)
 DOTS_PER_MM = DPI / 25.4
@@ -180,13 +183,34 @@ def send_to_printer(command: bytes, printer_ip: str = PRINTER_IP,
 def send_to_usb_printer(command: bytes, printer_name: Optional[str] = None) -> bool:
     """
     Send print command to USB-connected printer.
-    Works on Windows with the printer shared name.
+    Works on Windows with the printer name from Control Panel.
+    
+    For Datamax O'Neil E-4205A Mark III on USB003.
     """
+    if printer_name is None:
+        printer_name = USB_PRINTER_NAME
+    
     if sys.platform == "win32":
         try:
             import win32print
-            if printer_name is None:
-                printer_name = win32print.GetDefaultPrinter()
+            
+            # List available printers for debugging
+            printers = [p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+            
+            # Try to find the printer (case-insensitive partial match)
+            matched_printer = None
+            for p in printers:
+                if "datamax" in p.lower() or "e-4205" in p.lower() or "e4205" in p.lower():
+                    matched_printer = p
+                    break
+            
+            if matched_printer:
+                printer_name = matched_printer
+                print(f"Found printer: {printer_name}")
+            elif printer_name not in printers:
+                print(f"⚠ Warning: '{printer_name}' not found in printer list")
+                print(f"  Available printers: {printers}")
+                print(f"  Trying anyway...")
             
             hPrinter = win32print.OpenPrinter(printer_name)
             try:
@@ -202,24 +226,36 @@ def send_to_usb_printer(command: bytes, printer_name: Optional[str] = None) -> b
             print(f"✓ Print command sent to USB printer: {printer_name}")
             return True
         except ImportError:
-            print("✗ win32print not available. Install pywin32: pip install pywin32")
+            print("✗ win32print not available. Install pywin32:")
+            print("  pip install pywin32")
             return False
         except Exception as e:
             print(f"✗ Failed to send to USB printer: {e}")
+            # Try to list printers for help
+            try:
+                import win32print
+                printers = [p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+                print(f"  Available printers: {printers}")
+            except:
+                pass
             return False
     else:
-        # On macOS/Linux, try using lpr command
+        # On macOS/Linux, try using lpr command with printer name
         try:
             import subprocess
+            cmd = ['lpr', '-l']
+            if printer_name:
+                cmd = ['lpr', '-P', printer_name, '-l']
+            
             process = subprocess.Popen(
-                ['lpr', '-l'],  # -l for raw mode
+                cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
             stdout, stderr = process.communicate(input=command)
             if process.returncode == 0:
-                print("✓ Print command sent via lpr")
+                print(f"✓ Print command sent via lpr to {printer_name or 'default printer'}")
                 return True
             else:
                 print(f"✗ lpr failed: {stderr.decode()}")
@@ -281,7 +317,8 @@ def generate_barcode_preview(item_number: str, output_dir: str = "barcodes"):
 def print_tag(item_number: str, price: float, carat_weight: float,
               gold_karat: int,
               printer_ip: Optional[str] = None,
-              use_usb: bool = False,
+              printer_name: Optional[str] = None,
+              use_usb: bool = None,  # None = use default from config
               use_zpl: bool = False,
               use_epl: bool = False,
               dry_run: bool = False) -> bool:
@@ -293,8 +330,9 @@ def print_tag(item_number: str, price: float, carat_weight: float,
         price: Selling price (e.g., 17600)
         carat_weight: Diamond carat weight (e.g., 5.26)
         gold_karat: Gold karat (e.g., 14, 18, 24)
-        printer_ip: Printer IP address (optional, uses default)
-        use_usb: Use USB connection instead of network
+        printer_ip: Printer IP address (if using network)
+        printer_name: USB printer name (if using USB)
+        use_usb: Use USB connection (default: True from config)
         use_zpl: Use ZPL commands instead of DPL
         use_epl: Use EPL commands instead of DPL
         dry_run: Don't actually print, just generate commands
@@ -302,6 +340,10 @@ def print_tag(item_number: str, price: float, carat_weight: float,
     Returns:
         True if print was successful
     """
+    # Default to USB if not specified
+    if use_usb is None:
+        use_usb = DEFAULT_USE_USB
+    
     print("\n" + "="*50)
     print("JEWELRY TAG PRINT JOB")
     print("="*50)
@@ -310,6 +352,7 @@ def print_tag(item_number: str, price: float, carat_weight: float,
     print(f"Carat Weight: D={carat_weight:.2f}")
     print(f"Gold Karat:   {gold_karat}K")
     print(f"Barcode:      {generate_item_barcode(item_number)}")
+    print(f"Connection:   {'USB' if use_usb else 'Network'}")
     print("="*50)
     
     # Generate print command
@@ -328,7 +371,7 @@ def print_tag(item_number: str, price: float, carat_weight: float,
         print(command.decode('ascii'))
         success = True
     elif use_usb:
-        success = send_to_usb_printer(command)
+        success = send_to_usb_printer(command, printer_name)
     else:
         ip = printer_ip or PRINTER_IP
         success = send_to_printer(command, ip)
@@ -382,17 +425,42 @@ def interactive_mode():
             break
 
 
+def list_printers():
+    """List available printers on the system."""
+    if sys.platform == "win32":
+        try:
+            import win32print
+            printers = win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)
+            print("\nAvailable Printers:")
+            print("-" * 40)
+            for flags, desc, name, comment in printers:
+                marker = " <-- Datamax" if "datamax" in name.lower() else ""
+                print(f"  {name}{marker}")
+            print("-" * 40)
+            return [p[2] for p in printers]
+        except ImportError:
+            print("✗ Install pywin32 to list printers: pip install pywin32")
+            return []
+    else:
+        print("Printer listing only available on Windows")
+        return []
+
+
 def main():
     """Main entry point with argument parsing."""
     parser = argparse.ArgumentParser(
-        description='Jewelry Tag Printer for Datamax O\'Neil E-Class Mark III',
+        description='Jewelry Tag Printer for Datamax O\'Neil E-4205A Mark III (USB)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
+Printer: Datamax O'Neil E-4205A Mark III on USB003
+Default connection: USB (configured in config.py)
+
 Examples:
   %(prog)s -i                                    # Interactive mode
-  %(prog)s -n "MSD958009" -p 17600 -c 5.26 -k 14
+  %(prog)s -n "MSD958009" -p 17600 -c 5.26 -k 14 # Print via USB (default)
   %(prog)s -n "RING001" -p 1299 -c 1.0 -k 18 --dry-run
-  %(prog)s -n "NECK002" -p 899 -c 0.75 -k 14 --ip 192.168.1.50
+  %(prog)s --list-printers                       # Show available printers
+  %(prog)s -n "TEST" -p 100 -c 1.0 -k 14 --network --ip 192.168.1.50
         """
     )
     
@@ -406,18 +474,26 @@ Examples:
                         help='Carat weight')
     parser.add_argument('-k', '--karat', type=int, choices=[10, 14, 18, 22, 24],
                         help='Gold karat (10, 14, 18, 22, or 24)')
+    parser.add_argument('--printer', type=str, default=USB_PRINTER_NAME,
+                        help=f'USB printer name (default: {USB_PRINTER_NAME})')
+    parser.add_argument('--network', action='store_true',
+                        help='Use network connection instead of USB')
     parser.add_argument('--ip', type=str, default=PRINTER_IP,
-                        help=f'Printer IP address (default: {PRINTER_IP})')
-    parser.add_argument('--usb', action='store_true',
-                        help='Use USB connection instead of network')
+                        help=f'Printer IP address for network mode (default: {PRINTER_IP})')
     parser.add_argument('--zpl', action='store_true',
                         help='Use ZPL format instead of DPL')
     parser.add_argument('--epl', action='store_true',
                         help='Use EPL format instead of DPL')
     parser.add_argument('--dry-run', action='store_true',
                         help='Generate commands without sending to printer')
+    parser.add_argument('--list-printers', action='store_true',
+                        help='List available printers and exit')
     
     args = parser.parse_args()
+    
+    if args.list_printers:
+        list_printers()
+        return
     
     if args.interactive:
         interactive_mode()
@@ -429,7 +505,8 @@ Examples:
             carat_weight=args.carat,
             gold_karat=args.karat,
             printer_ip=args.ip,
-            use_usb=args.usb,
+            printer_name=args.printer,
+            use_usb=not args.network,  # USB is default, --network overrides
             use_zpl=args.zpl,
             use_epl=args.epl,
             dry_run=args.dry_run

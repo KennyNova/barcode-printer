@@ -11,29 +11,51 @@ Tag Layout (Back):
   - Barcode (Code 128)
 """
 
-# Printer Network Settings
-PRINTER_IP = "192.168.1.100"  # Your Datamax O'Neil printer IP address
-PRINTER_PORT = 9100           # Standard raw printing port (usually 9100)
+# =============================================================================
+# USB PRINTER SETTINGS (Default - using USB connection)
+# =============================================================================
+# Set to True to use USB connection (recommended for your setup)
+DEFAULT_USE_USB = True
 
+# Windows printer name - find this in Control Panel > Devices and Printers
+# Common names for your printer:
+#   "Datamax-O'Neil E-4205A Mark III"
+#   "DatamaxONeil E4205A Mark III"  
+#   "Datamax E-4205A"
+# Run: Get-Printer | Select-Object Name  (in PowerShell to list printers)
+USB_PRINTER_NAME = "Datamax-O'Neil E-4205A Mark III"
+
+# USB Port (for reference - Windows handles this via printer name)
+USB_PORT = "USB003"
+
+# =============================================================================
+# NETWORK PRINTER SETTINGS (Alternative - if using Ethernet)
+# =============================================================================
+PRINTER_IP = "192.168.1.100"  # Your printer IP (if using network)
+PRINTER_PORT = 9100           # Standard raw printing port
+
+# =============================================================================
+# PRINTER SPECIFICATIONS
+# =============================================================================
 # Printer DPI (dots per inch)
-# E-Class Mark III standard is 203 DPI
-# If you have the 300 DPI version, change this to 300
+# E-Class Mark III E-4205A = 203 DPI (standard)
+# E-Class Mark III E-4305A = 300 DPI (optional high-res)
 PRINTER_DPI = 203
 
 # Label Dimensions (in millimeters)
-# Based on your jewelry tag specifications
 LABEL_WIDTH_MM = 42
 LABEL_HEIGHT_MM = 26
 TAIL_WIDTH_MM = 68  # Total width including tail (barcode area)
 TAIL_HEIGHT_MM = 11
 
-# CSV History File
+# =============================================================================
+# FILE SETTINGS
+# =============================================================================
 CSV_FILE = "print_history.csv"
-
-# Barcode Preview Directory
 BARCODE_PREVIEW_DIR = "barcodes"
 
-# Default Print Settings
-DEFAULT_USE_ZPL = False  # Set to True if your printer prefers ZPL over DPL
+# =============================================================================
+# PRINT FORMAT SETTINGS
+# =============================================================================
+DEFAULT_USE_ZPL = False  # Set to True if printer prefers ZPL over DPL
 DEFAULT_USE_EPL = False  # Set to True to use EPL format
-DEFAULT_USE_USB = False  # Set to True if using USB connection

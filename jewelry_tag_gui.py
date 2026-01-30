@@ -12,7 +12,10 @@ import sys
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from jewelry_tag_printer import print_tag, generate_item_barcode, CSV_FILE, PRINTER_IP
+from jewelry_tag_printer import (
+    print_tag, generate_item_barcode, CSV_FILE, PRINTER_IP,
+    DEFAULT_USE_USB, USB_PRINTER_NAME
+)
 
 
 class JewelryTagPrinterGUI:
@@ -100,22 +103,34 @@ class JewelryTagPrinterGUI:
         settings_frame = ttk.LabelFrame(main_frame, text="Printer Settings", padding="10")
         settings_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=5)
         
-        # Printer IP
-        ttk.Label(settings_frame, text="Printer IP:").grid(row=0, column=0, sticky="e", pady=2)
+        # Connection type
+        self.use_usb_var = tk.BooleanVar(value=DEFAULT_USE_USB)
+        usb_check = ttk.Checkbutton(settings_frame, text="USB Connection (E-4205A Mark III)", 
+                                    variable=self.use_usb_var, command=self.toggle_connection)
+        usb_check.grid(row=0, column=0, columnspan=2, sticky="w", pady=2)
+        
+        # Printer name (USB)
+        ttk.Label(settings_frame, text="Printer:").grid(row=1, column=0, sticky="e", pady=2)
+        self.printer_name_var = tk.StringVar(value=USB_PRINTER_NAME)
+        self.printer_name_entry = ttk.Entry(settings_frame, textvariable=self.printer_name_var, width=28)
+        self.printer_name_entry.grid(row=1, column=1, sticky="w", pady=2, padx=(10, 0))
+        
+        # Printer IP (Network - disabled by default)
+        ttk.Label(settings_frame, text="IP (if network):").grid(row=2, column=0, sticky="e", pady=2)
         self.printer_ip_var = tk.StringVar(value=PRINTER_IP)
-        ip_entry = ttk.Entry(settings_frame, textvariable=self.printer_ip_var, width=20)
-        ip_entry.grid(row=0, column=1, sticky="w", pady=2, padx=(10, 0))
+        self.ip_entry = ttk.Entry(settings_frame, textvariable=self.printer_ip_var, width=20, state='disabled')
+        self.ip_entry.grid(row=2, column=1, sticky="w", pady=2, padx=(10, 0))
         
         # Options
         self.dry_run_var = tk.BooleanVar(value=False)
         dry_run_check = ttk.Checkbutton(settings_frame, text="Dry Run (Preview Only)", 
                                         variable=self.dry_run_var)
-        dry_run_check.grid(row=1, column=0, columnspan=2, sticky="w", pady=5)
+        dry_run_check.grid(row=3, column=0, columnspan=2, sticky="w", pady=5)
         
         self.use_zpl_var = tk.BooleanVar(value=False)
         zpl_check = ttk.Checkbutton(settings_frame, text="Use ZPL Format", 
                                     variable=self.use_zpl_var)
-        zpl_check.grid(row=2, column=0, columnspan=2, sticky="w", pady=2)
+        zpl_check.grid(row=4, column=0, columnspan=2, sticky="w", pady=2)
         
         row += 1
         
@@ -150,6 +165,15 @@ class JewelryTagPrinterGUI:
         
         # Focus on first entry
         self.item_entry.focus()
+    
+    def toggle_connection(self):
+        """Toggle between USB and network connection settings."""
+        if self.use_usb_var.get():
+            self.printer_name_entry.config(state='normal')
+            self.ip_entry.config(state='disabled')
+        else:
+            self.printer_name_entry.config(state='disabled')
+            self.ip_entry.config(state='normal')
     
     def update_preview(self, *args):
         """Update the tag preview and barcode text."""
@@ -222,6 +246,8 @@ class JewelryTagPrinterGUI:
                 carat_weight=float(self.carat_var.get()),
                 gold_karat=int(self.karat_var.get()),
                 printer_ip=self.printer_ip_var.get().strip(),
+                printer_name=self.printer_name_var.get().strip(),
+                use_usb=self.use_usb_var.get(),
                 use_zpl=self.use_zpl_var.get(),
                 dry_run=self.dry_run_var.get()
             )
