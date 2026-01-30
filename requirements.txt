@@ -1,0 +1,9 @@
+# Jewelry Tag Printer Dependencies
+# Datamax O'Neil E-Class Mark III
+
+# Barcode generation with image support
+python-barcode[images]==0.15.1
+Pillow>=10.0.0
+
+# Windows USB printing support (Windows only)
+# pywin32>=306; sys_platform == 'win32'
