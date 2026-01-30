@@ -98,43 +98,44 @@ def create_dpl_command(item_number: str, price: float, carat_weight: float,
     dpl.append("H10")                    # Heat setting
     
     if preset == "barbell":
-        # Barbell tag: 7/16" x 3.5" 
-        # WIDTH: 7/16" = 0.4375" = 89 dots (VERY narrow!)
-        # LENGTH: 3.5" total, but only 1.75" = 355 dots is printable
+        # Barbell tag: 7/16" x 3.5" total
+        # WIDTH: 7/16" = 89 dots
+        # PRINTABLE LENGTH: 1.75" = 355 dots (split into two halves)
+        # LOOP (non-printable): 1.75" = 355 dots
         #
-        # This tag is SO narrow that we can only fit tiny text
-        # Text prints lengthwise down the tag
+        # Layout:
+        # ┌─────────────┬─────────────┬──────────────────────┐
+        # │  PRODUCT    │   BARCODE   │    LOOP (no print)   │
+        # │    INFO     │   (back)    │                      │
+        # │  0.875"     │   0.875"    │       1.75"          │
+        # │  (177 dots) │  (177 dots) │     (355 dots)       │
+        # └─────────────┴─────────────┴──────────────────────┘
+        #               ↑ fold
         #
-        # ┌───┐
-        # │ P │ <- Price (rotated)
-        # │ D │ <- D=carat
-        # │ I │ <- Item#
-        # │|||│ <- Small barcode (optional)
-        # └───┘
-        #  89 dots wide (7/16")
+        # First half (0-177 dots): Price, D=, Item# 
+        # Second half (177-355 dots): Barcode (folds behind)
+        # Loop (355+ dots): Nothing!
         
         dpl.append("PW089")                         # Width: 89 dots (7/16")
-        dpl.append("L0355")                         # Length: 355 dots (1.75")
+        dpl.append("L0355")                         # Length: 355 dots (1.75" printable only)
         
-        # Text must be TINY to fit in 89 dots width
-        # Using smallest font, no rotation (prints top to bottom)
-        # Format: 1 ROT 11 00 XXX YYY 0 HH W F DATA
-        # ROT=2 means 0° (normal), font 0 is smallest
+        # FIRST HALF (0-177 dots): Product Info
+        # Text rotated 90° to read when tag hangs vertically
+        # Using small font to fit in 89 dot width
         
-        # Price at top - small font
-        dpl.append(f"121100001000050100{price_str}")
+        # Price - near start
+        dpl.append(f"121100001500100100{price_str}")
         
-        # D=carat below
-        dpl.append(f"121100006000050100{carat_str}")
+        # D=carat 
+        dpl.append(f"121100005500100100{carat_str}")
         
-        # Item number 
-        dpl.append(f"121100012000050100{item_number}")
+        # Item number
+        dpl.append(f"121100010000050100{item_number}")
         
-        # Barcode - VERY small to fit, or skip if too narrow
-        # Using smallest possible barcode settings
-        # Only include if item number is short enough
-        if len(barcode_data) <= 10:
-            dpl.append(f"1e2020000050101008020{barcode_data}")
+        # SECOND HALF (177-355 dots): Barcode
+        # This section folds behind to become the back
+        # Barcode positioned starting at ~180 dots
+        dpl.append(f"1e2018500100101008050{barcode_data}")
         
     else:
         # Standard RFID tag: 68mm x 26mm (544 x 208 dots at 203 DPI)
@@ -181,14 +182,16 @@ def create_test_label(preset: str = "standard") -> bytes:
     """Create a simple test label to verify printer communication."""
     
     if preset == "barbell":
-        # Barbell test: 7/16" wide (89 dots) x 1.75" long (355 dots)
+        # Barbell test: 7/16" wide (89 dots) x 1.75" printable (355 dots)
+        # First half (0-177 dots) = front, Second half (177-355) = back
         dpl = "\x02n\r\n"          # Clear buffer
         dpl += "\x02L\r\n"         # Start label
         dpl += "D11\r\n"           # Density
         dpl += "PW089\r\n"         # Width 89 dots (7/16")
-        dpl += "L0355\r\n"         # Length 355 dots (1.75")
-        # Simple small text that fits in narrow width
-        dpl += "121100002000100100TEST\r\n"
+        dpl += "L0355\r\n"         # Length 355 dots (1.75" printable)
+        # Print "FRONT" on first half, "BACK" on second half
+        dpl += "121100002000100100FRONT\r\n"   # First half (front)
+        dpl += "121100019000100100BACK\r\n"    # Second half (back/barcode area)
         dpl += "Q0001\r\n"         # Quantity 1
         dpl += "E\r\n"             # End
     else:

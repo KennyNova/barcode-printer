@@ -36,15 +36,18 @@ LABEL_PRESETS = {
     },
     "barbell": {
         "name": "Barbell Tag (7/16\" x 3.5\")",
-        "description": "Narrow string tag: 7/16\" wide, 1.75\" printable + 1.75\" loop",
+        "description": "Folding tag: front(0.875\") + back(0.875\") + loop(1.75\")",
         "width_inches": 0.4375,     # 7/16" = 11mm
-        "total_length_inches": 3.5, # 3.5" total = 89mm
-        "printable_length_inches": 1.75,  # 1.75" printable area
-        "loop_length_inches": 1.75, # 1.75" adhesive-free loop
+        "total_length_inches": 3.5, # 3.5" total
+        "printable_length_inches": 1.75,  # 1.75" printable (both halves)
+        "front_length_inches": 0.875,     # First half - product info
+        "back_length_inches": 0.875,      # Second half - barcode (folds behind)
+        "loop_length_inches": 1.75,       # Thin loop - NO printing
         "width_dots": 89,           # 7/16" at 203 DPI
-        "height_dots": 355,         # 1.75" printable at 203 DPI (use this for label length)
-        "total_height_dots": 710,   # 3.5" at 203 DPI
-        "printable_height_dots": 355,
+        "height_dots": 355,         # 1.75" printable at 203 DPI
+        "front_dots": 177,          # First half for product info
+        "back_dots": 178,           # Second half for barcode
+        "loop_dots": 355,           # Loop - don't print here
     }
 }
 
