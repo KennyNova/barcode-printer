@@ -182,17 +182,13 @@ def create_test_label(preset: str = "standard") -> bytes:
     """Create a simple test label to verify printer communication."""
     
     if preset == "barbell":
-        # Barbell test: 7/16" wide (89 dots) x 1.75" printable (355 dots)
-        # First half (0-177 dots) = front, Second half (177-355) = back
+        # Barbell test - same format that worked before, different position
+        # The working test printed on the loop (too far right)
+        # So we need to print more to the LEFT (lower X coordinates)
         dpl = "\x02n\r\n"          # Clear buffer
         dpl += "\x02L\r\n"         # Start label
         dpl += "D11\r\n"           # Density
-        dpl += "PW089\r\n"         # Width 89 dots (7/16")
-        dpl += "L0355\r\n"         # Length 355 dots (1.75" printable)
-        # Print "FRONT" on first half, "BACK" on second half
-        dpl += "121100002000100100FRONT\r\n"   # First half (front)
-        dpl += "121100019000100100BACK\r\n"    # Second half (back/barcode area)
-        dpl += "Q0001\r\n"         # Quantity 1
+        dpl += "121100001000500TEST\r\n"     # Position 010,005 - near start
         dpl += "E\r\n"             # End
     else:
         # Standard test
