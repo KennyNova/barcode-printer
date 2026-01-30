@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Jewelry Tag Printer for Datamax O'Neil E-Class Mark III
-Prints item details and barcode on jewelry tags (42mm x 26mm with 68mm tail)
+Prints item details on front, barcode on back of jewelry tags (42mm x 26mm)
 """
 
 import csv
@@ -49,96 +49,111 @@ def generate_item_barcode(item_number: str) -> str:
 
 
 def create_dpl_command(item_number: str, price: float, carat_weight: float, 
-                        gold_karat: int, cost: float) -> bytes:
+                        gold_karat: int) -> bytes:
     """
     Create DPL (Datamax Programming Language) command for the jewelry tag.
     
-    The E-Class Mark III uses DPL commands for label printing.
+    Front side: Price, D=carat, Item number (rotated 90°)
+    Back side: Barcode (printed on tail portion that folds over)
     """
     barcode_data = generate_item_barcode(item_number)
     
-    # Format values for display
-    price_str = f"${price:,.2f}"
-    carat_str = f"{carat_weight:.2f}ct"
-    karat_str = f"{gold_karat}K"
+    # Format values for display (matching the tag image)
+    price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
+    carat_str = f"D={carat_weight:.2f}"
     
-    # DPL Command structure
-    # STX = \x02, Label start
-    # L = Label command
-    # D11 = Set print density
-    # H = Heat setting
-    # S = Speed
+    # DPL Command structure for Datamax E-Class
+    dpl = []
     
-    dpl_commands = []
+    # Initialize label
+    dpl.append("\x02L")           # STX + Start label format
+    dpl.append("D11")             # Density
+    dpl.append("H15")             # Heat setting  
+    dpl.append(f"PW{LABEL_HEIGHT_DOTS}")  # Print width (swapped due to rotation)
+    dpl.append(f"LL{LABEL_WIDTH_DOTS}")   # Label length
     
-    # Start of label format
-    dpl_commands.append("\x02L")  # STX + Label command
-    dpl_commands.append("D11")     # Density setting
-    dpl_commands.append("H10")     # Heat setting
-    dpl_commands.append("PW336")   # Print width in dots (42mm)
-    dpl_commands.append("LL208")   # Label length in dots (26mm)
+    # FRONT SIDE - Text rotated 90° (rotation 1 = 90° clockwise)
+    # Format: 1YRRRXXXX YYYY fffFONTdata
+    # Y=rotation(1=90°), R=reverse, X=column, Y=row, f=font magnification
     
-    # Clear previous format
-    dpl_commands.append("Q0000")   # Quantity
-    dpl_commands.append("q0")      # No pause
+    # Price - top line (largest)
+    # Position from right edge, text reads bottom to top when tag hangs
+    dpl.append(f"141100015005000{price_str}")
     
-    # Position elements on the label
-    # Format: 1X1100000Y0000aaaFONTtext
-    # X position (from left), Y position (from top)
+    # D=carat - middle line  
+    dpl.append(f"131100095005000{carat_str}")
     
-    # Item Number - Top of label (larger font)
-    # 1 = rotation 0, a = font selection, X = horizontal, Y = vertical
-    dpl_commands.append(f"121100010020000{item_number}")  # Item number at top
+    # Item number - bottom line
+    dpl.append(f"121100160005000{item_number}")
     
-    # Price - Below item number
-    dpl_commands.append(f"121100010050000{price_str}")
+    # BACK SIDE - Barcode on the tail portion (folds behind)
+    # This prints on the extended tail area that wraps around
+    # Barcode rotated 90° to match orientation, positioned on tail
+    dpl.append(f"1B1300250010030h040w02c{barcode_data}")
     
-    # Carat Weight and Karat on same line
-    dpl_commands.append(f"111100010080000{carat_str} {karat_str}")
+    # End and print
+    dpl.append("E")
     
-    # Barcode - Code 128 at bottom of main label area
-    # B = Barcode command
-    # c = Code 128 type
-    # h = height in dots
-    # w = narrow bar width multiplier
-    dpl_commands.append(f"1B6300001100040h050w02c{barcode_data}")
-    
-    # End label and print
-    dpl_commands.append("E")  # End of label format
-    
-    # Join commands with carriage return
-    full_command = "\r\n".join(dpl_commands) + "\r\n"
-    
-    return full_command.encode('ascii')
+    return "\r\n".join(dpl).encode('ascii')
 
 
 def create_zpl_command(item_number: str, price: float, carat_weight: float,
-                       gold_karat: int, cost: float) -> bytes:
+                       gold_karat: int) -> bytes:
     """
-    Alternative: Create ZPL command (if printer supports ZPL emulation).
-    Some E-Class printers support ZPL through firmware.
+    Create ZPL command (if printer supports ZPL emulation).
+    Front: Price, D=carat, Item number (rotated)
+    Back: Barcode on tail
     """
     barcode_data = generate_item_barcode(item_number)
     
-    price_str = f"${price:,.2f}"
-    carat_str = f"{carat_weight:.2f}ct"
-    karat_str = f"{gold_karat}K"
+    price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
+    carat_str = f"D={carat_weight:.2f}"
     
-    zpl = f"""
-^XA
-^PW336
-^LL208
+    # ZPL with rotation (^FWR = rotate 90°)
+    zpl = f"""^XA
+^PW{LABEL_HEIGHT_DOTS}
+^LL{LABEL_WIDTH_DOTS}
+^FWR
+^CF0,32
+^FO20,30^FD{price_str}^FS
+^CF0,28
+^FO65,30^FD{carat_str}^FS
 ^CF0,24
-^FO10,10^FD{item_number}^FS
-^CF0,20
-^FO10,40^FD{price_str}^FS
-^CF0,16
-^FO10,65^FD{carat_str} {karat_str}^FS
-^BY2,2,50
-^FO10,90^BC,50,Y,N,N^FD{barcode_data}^FS
-^XZ
-"""
+^FO110,30^FD{item_number}^FS
+^FWR
+^BY2,2,40
+^FO160,200^BC,40,N,N,N^FD{barcode_data}^FS
+^XZ"""
     return zpl.strip().encode('ascii')
+
+
+def create_epl_command(item_number: str, price: float, carat_weight: float,
+                       gold_karat: int) -> bytes:
+    """
+    Create EPL2 command (alternative format supported by some Datamax printers).
+    """
+    barcode_data = generate_item_barcode(item_number)
+    
+    price_str = f"{int(price)}" if price == int(price) else f"{price:.2f}"
+    carat_str = f"D={carat_weight:.2f}"
+    
+    epl = []
+    epl.append("N")  # Clear buffer
+    epl.append(f"q{LABEL_HEIGHT_DOTS}")  # Label width
+    epl.append(f"Q{LABEL_WIDTH_DOTS},24")  # Label height, gap
+    
+    # Rotated text (R270 = text reads upward when label hangs)
+    # A command: Ax,y,rotation,font,h_mult,v_mult,N/R,"data"
+    epl.append(f'A30,180,1,4,1,2,N,"{price_str}"')      # Price
+    epl.append(f'A70,180,1,3,1,1,N,"{carat_str}"')      # D=carat
+    epl.append(f'A105,180,1,3,1,1,N,"{item_number}"')   # Item number
+    
+    # Barcode on back/tail area
+    epl.append(f'B180,50,1,1,2,3,40,N,"{barcode_data}"')
+    
+    epl.append("P1")  # Print 1 label
+    
+    return "\r\n".join(epl).encode('ascii')
 
 
 def send_to_printer(command: bytes, printer_ip: str = PRINTER_IP, 
@@ -218,8 +233,7 @@ def send_to_usb_printer(command: bytes, printer_name: Optional[str] = None) -> b
 
 
 def save_to_csv(item_number: str, price: float, carat_weight: float,
-                gold_karat: int, cost: float, success: bool,
-                csv_path: str = CSV_FILE):
+                gold_karat: int, success: bool, csv_path: str = CSV_FILE):
     """Save print record to CSV file."""
     file_exists = os.path.exists(csv_path)
     
@@ -230,7 +244,7 @@ def save_to_csv(item_number: str, price: float, carat_weight: float,
         if not file_exists:
             writer.writerow([
                 'Timestamp', 'Item Number', 'Price', 'Carat Weight', 
-                'Gold Karat', 'Cost', 'Barcode Data', 'Print Status'
+                'Gold Karat', 'Barcode Data', 'Print Status'
             ])
         
         barcode_data = generate_item_barcode(item_number)
@@ -239,7 +253,7 @@ def save_to_csv(item_number: str, price: float, carat_weight: float,
         
         writer.writerow([
             timestamp, item_number, f"{price:.2f}", f"{carat_weight:.2f}",
-            gold_karat, f"{cost:.2f}", barcode_data, status
+            gold_karat, barcode_data, status
         ])
     
     print(f"✓ Record saved to {csv_path}")
@@ -265,23 +279,24 @@ def generate_barcode_preview(item_number: str, output_dir: str = "barcodes"):
 
 
 def print_tag(item_number: str, price: float, carat_weight: float,
-              gold_karat: int, cost: float, 
+              gold_karat: int,
               printer_ip: Optional[str] = None,
               use_usb: bool = False,
               use_zpl: bool = False,
+              use_epl: bool = False,
               dry_run: bool = False) -> bool:
     """
     Main function to print a jewelry tag.
     
     Args:
-        item_number: Unique item identifier
-        price: Selling price
-        carat_weight: Diamond/gem carat weight
+        item_number: Unique item identifier (e.g., MSD958009)
+        price: Selling price (e.g., 17600)
+        carat_weight: Diamond carat weight (e.g., 5.26)
         gold_karat: Gold karat (e.g., 14, 18, 24)
-        cost: Item cost (for records only, not printed)
         printer_ip: Printer IP address (optional, uses default)
         use_usb: Use USB connection instead of network
         use_zpl: Use ZPL commands instead of DPL
+        use_epl: Use EPL commands instead of DPL
         dry_run: Don't actually print, just generate commands
     
     Returns:
@@ -291,19 +306,21 @@ def print_tag(item_number: str, price: float, carat_weight: float,
     print("JEWELRY TAG PRINT JOB")
     print("="*50)
     print(f"Item Number:  {item_number}")
-    print(f"Price:        ${price:,.2f}")
-    print(f"Carat Weight: {carat_weight:.2f}ct")
+    print(f"Price:        {int(price) if price == int(price) else price}")
+    print(f"Carat Weight: D={carat_weight:.2f}")
     print(f"Gold Karat:   {gold_karat}K")
-    print(f"Cost:         ${cost:,.2f} (internal)")
     print(f"Barcode:      {generate_item_barcode(item_number)}")
     print("="*50)
     
     # Generate print command
     if use_zpl:
-        command = create_zpl_command(item_number, price, carat_weight, gold_karat, cost)
+        command = create_zpl_command(item_number, price, carat_weight, gold_karat)
         print("Using ZPL format")
+    elif use_epl:
+        command = create_epl_command(item_number, price, carat_weight, gold_karat)
+        print("Using EPL format")
     else:
-        command = create_dpl_command(item_number, price, carat_weight, gold_karat, cost)
+        command = create_dpl_command(item_number, price, carat_weight, gold_karat)
         print("Using DPL format")
     
     if dry_run:
@@ -316,8 +333,8 @@ def print_tag(item_number: str, price: float, carat_weight: float,
         ip = printer_ip or PRINTER_IP
         success = send_to_printer(command, ip)
     
-    # Save to CSV (only successful prints by default, but we log all)
-    save_to_csv(item_number, price, carat_weight, gold_karat, cost, success)
+    # Save to CSV
+    save_to_csv(item_number, price, carat_weight, gold_karat, success)
     
     # Generate barcode preview image
     generate_barcode_preview(item_number)
@@ -343,17 +360,16 @@ def interactive_mode():
                 print("✗ Item number is required\n")
                 continue
             
-            price = float(input("Price ($): ").replace('$', '').replace(',', ''))
-            carat_weight = float(input("Carat Weight: "))
+            price = float(input("Price: ").replace('$', '').replace(',', ''))
+            carat_weight = float(input("Carat Weight (D=): "))
             gold_karat = int(input("Gold Karat (14/18/24): "))
-            cost = float(input("Cost ($): ").replace('$', '').replace(',', ''))
             
             # Confirm before printing
             print("\nReady to print. Send to printer? [Y/n]: ", end="")
             confirm = input().strip().lower()
             
             if confirm in ('', 'y', 'yes'):
-                print_tag(item_number, price, carat_weight, gold_karat, cost)
+                print_tag(item_number, price, carat_weight, gold_karat)
             else:
                 print("Print cancelled.")
             
@@ -374,9 +390,9 @@ def main():
         epilog="""
 Examples:
   %(prog)s -i                                    # Interactive mode
-  %(prog)s -n "ABC123" -p 599.99 -c 0.5 -k 14 -x 250
-  %(prog)s -n "RING001" -p 1299 -c 1.0 -k 18 -x 500 --dry-run
-  %(prog)s -n "NECK002" -p 899 -c 0.75 -k 14 -x 350 --ip 192.168.1.50
+  %(prog)s -n "MSD958009" -p 17600 -c 5.26 -k 14
+  %(prog)s -n "RING001" -p 1299 -c 1.0 -k 18 --dry-run
+  %(prog)s -n "NECK002" -p 899 -c 0.75 -k 14 --ip 192.168.1.50
         """
     )
     
@@ -390,14 +406,14 @@ Examples:
                         help='Carat weight')
     parser.add_argument('-k', '--karat', type=int, choices=[10, 14, 18, 22, 24],
                         help='Gold karat (10, 14, 18, 22, or 24)')
-    parser.add_argument('-x', '--cost', type=float,
-                        help='Item cost (internal use)')
     parser.add_argument('--ip', type=str, default=PRINTER_IP,
                         help=f'Printer IP address (default: {PRINTER_IP})')
     parser.add_argument('--usb', action='store_true',
                         help='Use USB connection instead of network')
     parser.add_argument('--zpl', action='store_true',
                         help='Use ZPL format instead of DPL')
+    parser.add_argument('--epl', action='store_true',
+                        help='Use EPL format instead of DPL')
     parser.add_argument('--dry-run', action='store_true',
                         help='Generate commands without sending to printer')
     
@@ -406,22 +422,22 @@ Examples:
     if args.interactive:
         interactive_mode()
     elif all([args.item_number, args.price is not None, args.carat is not None,
-              args.karat is not None, args.cost is not None]):
+              args.karat is not None]):
         print_tag(
             item_number=args.item_number,
             price=args.price,
             carat_weight=args.carat,
             gold_karat=args.karat,
-            cost=args.cost,
             printer_ip=args.ip,
             use_usb=args.usb,
             use_zpl=args.zpl,
+            use_epl=args.epl,
             dry_run=args.dry_run
         )
     else:
         parser.print_help()
         print("\n✗ Error: Either use -i for interactive mode or provide all required arguments:")
-        print("  -n (item number), -p (price), -c (carat), -k (karat), -x (cost)")
+        print("  -n (item number), -p (price), -c (carat), -k (karat)")
 
 
 if __name__ == "__main__":

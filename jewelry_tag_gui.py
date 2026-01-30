@@ -19,13 +19,14 @@ class JewelryTagPrinterGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Jewelry Tag Printer")
-        self.root.geometry("450x520")
+        self.root.geometry("450x480")
         self.root.resizable(False, False)
         
         # Set style
         style = ttk.Style()
         style.configure('Title.TLabel', font=('Helvetica', 16, 'bold'))
         style.configure('Status.TLabel', font=('Helvetica', 10))
+        style.configure('Preview.TLabel', font=('Courier', 11))
         
         self.create_widgets()
         
@@ -53,14 +54,14 @@ class JewelryTagPrinterGUI:
         row += 1
         
         # Price
-        ttk.Label(main_frame, text="Price ($):").grid(row=row, column=0, sticky="e", pady=5)
+        ttk.Label(main_frame, text="Price:").grid(row=row, column=0, sticky="e", pady=5)
         self.price_var = tk.StringVar()
         self.price_entry = ttk.Entry(main_frame, textvariable=self.price_var, width=25)
         self.price_entry.grid(row=row, column=1, sticky="w", pady=5, padx=(10, 0))
         row += 1
         
         # Carat Weight
-        ttk.Label(main_frame, text="Carat Weight:").grid(row=row, column=0, sticky="e", pady=5)
+        ttk.Label(main_frame, text="Carat Weight (D=):").grid(row=row, column=0, sticky="e", pady=5)
         self.carat_var = tk.StringVar()
         self.carat_entry = ttk.Entry(main_frame, textvariable=self.carat_var, width=25)
         self.carat_entry.grid(row=row, column=1, sticky="w", pady=5, padx=(10, 0))
@@ -75,16 +76,24 @@ class JewelryTagPrinterGUI:
         karat_combo.set('14')
         row += 1
         
-        # Cost
-        ttk.Label(main_frame, text="Cost ($):").grid(row=row, column=0, sticky="e", pady=5)
-        self.cost_var = tk.StringVar()
-        self.cost_entry = ttk.Entry(main_frame, textvariable=self.cost_var, width=25)
-        self.cost_entry.grid(row=row, column=1, sticky="w", pady=5, padx=(10, 0))
-        row += 1
-        
         # Separator
         ttk.Separator(main_frame, orient='horizontal').grid(row=row, column=0, columnspan=2, 
                                                             sticky='ew', pady=15)
+        row += 1
+        
+        # Tag Preview (shows how it will look)
+        preview_frame = ttk.LabelFrame(main_frame, text="Tag Preview (Front)", padding="10")
+        preview_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=5)
+        
+        self.preview_label = ttk.Label(preview_frame, text="17600\nD=5.26\nMSD958009", 
+                                        style='Preview.TLabel', justify='left')
+        self.preview_label.grid(row=0, column=0, sticky="w")
+        
+        # Update preview on input change
+        self.item_number_var.trace('w', self.update_preview)
+        self.price_var.trace('w', self.update_preview)
+        self.carat_var.trace('w', self.update_preview)
+        
         row += 1
         
         # Printer Settings
@@ -110,13 +119,10 @@ class JewelryTagPrinterGUI:
         
         row += 1
         
-        # Barcode Preview
-        self.barcode_label = ttk.Label(main_frame, text="Barcode: ---", style='Status.TLabel')
+        # Barcode info
+        self.barcode_label = ttk.Label(main_frame, text="Barcode (on back): ---", style='Status.TLabel')
         self.barcode_label.grid(row=row, column=0, columnspan=2, pady=10)
         row += 1
-        
-        # Update barcode preview on item number change
-        self.item_number_var.trace('w', self.update_barcode_preview)
         
         # Buttons frame
         btn_frame = ttk.Frame(main_frame)
@@ -144,15 +150,34 @@ class JewelryTagPrinterGUI:
         
         # Focus on first entry
         self.item_entry.focus()
+    
+    def update_preview(self, *args):
+        """Update the tag preview and barcode text."""
+        item = self.item_number_var.get().strip() or "ITEM#"
         
-    def update_barcode_preview(self, *args):
-        """Update the barcode preview text."""
-        item = self.item_number_var.get().strip()
-        if item:
+        try:
+            price = self.price_var.get().replace('$', '').replace(',', '')
+            price_val = float(price) if price else 0
+            price_str = f"{int(price_val)}" if price_val == int(price_val) else f"{price_val:.2f}"
+        except ValueError:
+            price_str = "0"
+        
+        try:
+            carat = float(self.carat_var.get()) if self.carat_var.get() else 0
+            carat_str = f"D={carat:.2f}"
+        except ValueError:
+            carat_str = "D=0.00"
+        
+        # Update preview (mimics actual tag layout)
+        preview_text = f"{price_str}\n{carat_str}\n{item}"
+        self.preview_label.config(text=preview_text)
+        
+        # Update barcode info
+        if item and item != "ITEM#":
             barcode = generate_item_barcode(item)
-            self.barcode_label.config(text=f"Barcode: {barcode}")
+            self.barcode_label.config(text=f"Barcode (on back): {barcode}")
         else:
-            self.barcode_label.config(text="Barcode: ---")
+            self.barcode_label.config(text="Barcode (on back): ---")
     
     def validate_inputs(self):
         """Validate all input fields."""
@@ -178,13 +203,6 @@ class JewelryTagPrinterGUI:
         if not self.karat_var.get():
             errors.append("Gold Karat is required")
         
-        try:
-            cost = float(self.cost_var.get().replace('$', '').replace(',', ''))
-            if cost < 0:
-                errors.append("Cost must be positive")
-        except ValueError:
-            errors.append("Invalid Cost format")
-        
         return errors
     
     def print_tag(self):
@@ -203,7 +221,6 @@ class JewelryTagPrinterGUI:
                 price=float(self.price_var.get().replace('$', '').replace(',', '')),
                 carat_weight=float(self.carat_var.get()),
                 gold_karat=int(self.karat_var.get()),
-                cost=float(self.cost_var.get().replace('$', '').replace(',', '')),
                 printer_ip=self.printer_ip_var.get().strip(),
                 use_zpl=self.use_zpl_var.get(),
                 dry_run=self.dry_run_var.get()
@@ -229,7 +246,6 @@ class JewelryTagPrinterGUI:
         self.price_var.set("")
         self.carat_var.set("")
         self.karat_var.set("14")
-        self.cost_var.set("")
         self.status_var.set("Ready")
         self.item_entry.focus()
     

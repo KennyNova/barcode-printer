@@ -1,6 +1,14 @@
 """
 Configuration file for Jewelry Tag Printer
 Edit these values to match your setup
+
+Tag Layout (Front):
+  - Line 1: Price (e.g., 17600)
+  - Line 2: D=carat (e.g., D=5.26)
+  - Line 3: Item Number (e.g., MSD958009)
+  
+Tag Layout (Back):
+  - Barcode (Code 128)
 """
 
 # Printer Network Settings
@@ -16,7 +24,7 @@ PRINTER_DPI = 203
 # Based on your jewelry tag specifications
 LABEL_WIDTH_MM = 42
 LABEL_HEIGHT_MM = 26
-TAIL_WIDTH_MM = 68  # Total width including tail
+TAIL_WIDTH_MM = 68  # Total width including tail (barcode area)
 TAIL_HEIGHT_MM = 11
 
 # CSV History File
@@ -27,4 +35,5 @@ BARCODE_PREVIEW_DIR = "barcodes"
 
 # Default Print Settings
 DEFAULT_USE_ZPL = False  # Set to True if your printer prefers ZPL over DPL
+DEFAULT_USE_EPL = False  # Set to True to use EPL format
 DEFAULT_USE_USB = False  # Set to True if using USB connection
